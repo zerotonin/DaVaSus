@@ -127,6 +127,81 @@ def ingest_main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _build_broken_stick_parser() -> argparse.ArgumentParser:
+    """Build the ``davasus-broken-stick`` argument parser.
+
+    Returns:
+        Configured :class:`argparse.ArgumentParser`.
+    """
+    p = argparse.ArgumentParser(
+        prog="davasus-broken-stick",
+        description=(
+            "Per-animal broken-stick fits of rumen temperature vs THI. "
+            "Writes results CSV and figures into <figdir>."
+        ),
+    )
+    p.add_argument("--db", type=Path, required=True, help="Path to cow.db")
+    p.add_argument(
+        "--figdir",
+        type=Path,
+        default=None,
+        help="Output directory (default: <repo>/figures/04_heat).",
+    )
+    p.add_argument(
+        "--thi-mode",
+        choices=("nrc", "mader"),
+        default="mader",
+        help="THI variant (default: mader = wind+solar adjusted).",
+    )
+    p.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable DEBUG logging.",
+    )
+    return p
+
+
+def broken_stick_main(argv: list[str] | None = None) -> int:
+    """Run :class:`davasus.analysis.broken_stick.BrokenStickAnalysis`.
+
+    Args:
+        argv: Optional argv list (for tests).
+
+    Returns:
+        Exit code: ``0`` on success, ``2`` if the database is missing.
+    """
+    from davasus.analysis.broken_stick import BrokenStickAnalysis
+    from davasus.extract import open_readonly
+
+    args = _build_broken_stick_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+
+    if not args.db.is_file():
+        log.error("Database not found: %s", args.db)
+        return 2
+
+    figdir = args.figdir
+    if figdir is None:
+        repo_root = Path(__file__).resolve().parents[2]
+        figdir = repo_root / "figures" / "04_heat"
+
+    started = time.perf_counter()
+    con = open_readonly(args.db)
+    try:
+        analysis = BrokenStickAnalysis(con, figdir=figdir, thi_mode=args.thi_mode)
+        results = analysis.run()
+    finally:
+        con.close()
+
+    n_ok = int(results["success"].sum())
+    elapsed = time.perf_counter() - started
+    log.info(
+        "broken-stick done in %.1fs — %d/%d fits successful, outputs in %s",
+        elapsed, n_ok, len(results), figdir,
+    )
+    return 0
+
+
 def _build_validate_parser() -> argparse.ArgumentParser:
     """Build the ``davasus-validate`` argument parser.
 
