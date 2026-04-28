@@ -194,3 +194,194 @@ def open_readonly(db_path: str | Path) -> sqlite3.Connection:
         Connection in ``mode=ro``.
     """
     return sqlite3.connect(f"file:{Path(db_path)}?mode=ro", uri=True)
+
+
+# ────────────────────────────────────────────────────────────────────────
+#  « Hourly aggregation for cosinor / actogram analyses »
+# ────────────────────────────────────────────────────────────────────────
+
+
+_SQL_SMAXTEC_HOURLY = """
+SELECT
+    DATE("timestamp")                           AS date,
+    CAST(strftime('%H', "timestamp") AS INTEGER) AS hour,
+    AVG(CAST(temp_without_drink_cycles AS REAL)) AS rumen_temp,
+    AVG(CAST(act_index AS REAL))                 AS act_index,
+    AVG(CAST(rum_index_x AS REAL))               AS rum_index_x
+FROM smaxtec
+WHERE animal_id = ?
+  AND temp_without_drink_cycles IS NOT NULL
+  AND CAST(temp_without_drink_cycles AS REAL) BETWEEN 30 AND 43
+GROUP BY date, hour
+ORDER BY date, hour
+"""
+
+_SQL_ESHEPHERD_HOURLY = """
+SELECT
+    DATE("timestamp")                           AS date,
+    CAST(strftime('%H', "timestamp") AS INTEGER) AS hour,
+    AVG(
+        COALESCE(imu_tick_40mg,  0)
+      + COALESCE(imu_tick_80mg,  0)
+      + COALESCE(imu_tick_120mg, 0)
+      + COALESCE(imu_tick_160mg, 0)
+      + COALESCE(imu_tick_200mg, 0)
+      + COALESCE(imu_tick_240mg, 0)
+    ) AS imu_activity
+FROM eshepherd
+WHERE animal_id = ?
+  AND imu_tick_40mg IS NOT NULL
+GROUP BY date, hour
+ORDER BY date, hour
+"""
+
+_SQL_WEATHER_FULL = """
+SELECT timestamp,
+       air_temp_avg,
+       rel_humid_avg,
+       wind_spd_avg,
+       rad_swin_avg,
+       pot_slr_rad_avg
+FROM weather
+"""
+
+
+class HourlyAggregator:
+    """Pull hourly per-animal-day means for the four circadian signals.
+
+    Attributes:
+        connection: Open :class:`sqlite3.Connection`.
+    """
+
+    def __init__(self, connection: sqlite3.Connection) -> None:
+        """Bind the aggregator to a connection.
+
+        Args:
+            connection: SQLite connection (read-only is fine).
+        """
+        self.connection = connection
+        self._weather: pd.DataFrame | None = None
+
+    # ── per-animal hourly frames ───────────────────────────────────────
+
+    def smaxtec_hourly(self, animal_id: int) -> pd.DataFrame:
+        """Return hourly bolus aggregates for one animal.
+
+        Args:
+            animal_id: Local farm id.
+
+        Returns:
+            DataFrame with columns ``date``, ``hour``, ``rumen_temp``,
+            ``act_index``, ``rum_index_x``. Sorted by ``(date, hour)``.
+        """
+        df = pd.read_sql_query(
+            _SQL_SMAXTEC_HOURLY, self.connection, params=(int(animal_id),)
+        )
+        if not df.empty:
+            df["date"] = pd.to_datetime(df["date"]).dt.date
+        return df
+
+    def eshepherd_hourly(self, animal_id: int) -> pd.DataFrame:
+        """Return hourly collar IMU-tick sum for one animal.
+
+        Args:
+            animal_id: Local farm id.
+
+        Returns:
+            DataFrame with ``date``, ``hour``, ``imu_activity``.
+        """
+        df = pd.read_sql_query(
+            _SQL_ESHEPHERD_HOURLY, self.connection, params=(int(animal_id),)
+        )
+        if not df.empty:
+            df["date"] = pd.to_datetime(df["date"]).dt.date
+        return df
+
+    def signals(self, animal_id: int) -> pd.DataFrame:
+        """Return all four signals on a common ``(date, hour)`` grid.
+
+        Args:
+            animal_id: Local farm id.
+
+        Returns:
+            DataFrame with one row per ``(date, hour)`` and columns
+            ``rumen_temp``, ``act_index``, ``rum_index_x``,
+            ``imu_activity``. Missing combinations are NaN.
+        """
+        sx = self.smaxtec_hourly(animal_id)
+        es = self.eshepherd_hourly(animal_id)
+        if sx.empty and es.empty:
+            return pd.DataFrame(
+                columns=[
+                    "date", "hour",
+                    "rumen_temp", "act_index", "rum_index_x", "imu_activity",
+                ],
+            )
+        if sx.empty:
+            return es.assign(
+                rumen_temp=float("nan"),
+                act_index=float("nan"),
+                rum_index_x=float("nan"),
+            )
+        if es.empty:
+            return sx.assign(imu_activity=float("nan"))
+        return sx.merge(es, on=["date", "hour"], how="outer")
+
+    # ── weather + heat-stress tagging ──────────────────────────────────
+
+    def weather_with_thi(self) -> pd.DataFrame:
+        """Return the cached full weather frame with both THI variants.
+
+        Returns:
+            DataFrame with ``timestamp``, ``date``, ``air_temp_avg``,
+            ``rel_humid_avg``, ``wind_spd_avg``, ``rad_swin_avg``,
+            ``pot_slr_rad_avg``, ``thi_nrc``, ``thi_mader``.
+        """
+        if self._weather is not None:
+            return self._weather
+        from davasus.thi import compute_thi_mader, compute_thi_nrc
+
+        df = pd.read_sql_query(_SQL_WEATHER_FULL, self.connection)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        df["date"] = df["timestamp"].dt.date
+        df["thi_nrc"] = compute_thi_nrc(df["air_temp_avg"], df["rel_humid_avg"])
+        df["thi_mader"] = compute_thi_mader(
+            df["air_temp_avg"], df["rel_humid_avg"],
+            df["wind_spd_avg"].fillna(0.0),
+            df["rad_swin_avg"].fillna(0.0),
+        )
+        self._weather = df
+        return df
+
+    def heat_stress_days(self, breakpoints: pd.DataFrame) -> pd.DataFrame:
+        """Tag every ``(animal, date)`` as heat-stress or cool.
+
+        Args:
+            breakpoints: DataFrame with at least ``animal_id``,
+                ``breakpoint``, and ``success`` columns
+                (i.e. the ``broken_stick_results.csv`` schema).
+
+        Returns:
+            DataFrame with ``animal_id``, ``date``, ``thi_max_mader``,
+            ``breakpoint``, ``heat_stress_day``. Only animals with
+            ``success=True`` in ``breakpoints`` are included.
+        """
+        weather = self.weather_with_thi()
+        daily = (
+            weather.groupby("date", as_index=False)["thi_mader"]
+            .max()
+            .rename(columns={"thi_mader": "thi_max_mader"})
+        )
+        ok = breakpoints[breakpoints["success"]][["animal_id", "breakpoint"]].copy()
+        if ok.empty or daily.empty:
+            return pd.DataFrame(
+                columns=[
+                    "animal_id", "date",
+                    "thi_max_mader", "breakpoint", "heat_stress_day",
+                ],
+            )
+        out = ok.merge(daily, how="cross")
+        out["heat_stress_day"] = out["thi_max_mader"] > out["breakpoint"]
+        return out[
+            ["animal_id", "date", "thi_max_mader", "breakpoint", "heat_stress_day"]
+        ]

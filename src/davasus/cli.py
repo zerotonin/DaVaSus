@@ -13,6 +13,8 @@ import sys
 import time
 from pathlib import Path
 
+import pandas as pd
+
 from davasus.db import Database
 from davasus.ingest_merged import MergedIngestor
 from davasus.ingest_weather import WeatherIngestor
@@ -199,6 +201,154 @@ def broken_stick_main(argv: list[str] | None = None) -> int:
         "broken-stick done in %.1fs — %d/%d fits successful, outputs in %s",
         elapsed, n_ok, len(results), figdir,
     )
+    return 0
+
+
+def _resolve_default_figdir(module_subdir: str) -> Path:
+    """Return ``<repo_root>/figures/<module_subdir>``.
+
+    Args:
+        module_subdir: Subfolder inside ``figures/`` (e.g. ``"02_circadian"``).
+    """
+    repo_root = Path(__file__).resolve().parents[2]
+    return repo_root / "figures" / module_subdir
+
+
+def _build_cosinor_parser() -> argparse.ArgumentParser:
+    """Build the ``davasus-cosinor`` argument parser."""
+    p = argparse.ArgumentParser(
+        prog="davasus-cosinor",
+        description=(
+            "Per-animal-day cosinor (single 24 h harmonic) on rumen temp, "
+            "bolus activity, rumination, and collar IMU activity. Days are "
+            "tagged heat-stress / cool using the M4 broken-stick breakpoints."
+        ),
+    )
+    p.add_argument("--db", type=Path, required=True, help="Path to cow.db")
+    p.add_argument(
+        "--figdir",
+        type=Path,
+        default=None,
+        help="Output directory (default: <repo>/figures/02_circadian).",
+    )
+    p.add_argument(
+        "--breakpoints",
+        type=Path,
+        default=None,
+        help=(
+            "Path to broken_stick_results.csv "
+            "(default: <repo>/figures/04_heat/broken_stick_results.csv)."
+        ),
+    )
+    p.add_argument("-v", "--verbose", action="store_true", help="DEBUG logging.")
+    return p
+
+
+def cosinor_main(argv: list[str] | None = None) -> int:
+    """Run :class:`davasus.analysis.circadian.CircadianAnalysis`.
+
+    Returns:
+        Exit code: ``0`` on success, ``2`` if inputs are missing.
+    """
+    from davasus.analysis.circadian import CircadianAnalysis
+    from davasus.extract import open_readonly
+
+    args = _build_cosinor_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+
+    if not args.db.is_file():
+        log.error("Database not found: %s", args.db)
+        return 2
+
+    figdir = args.figdir or _resolve_default_figdir("02_circadian")
+    breakpoints_path = args.breakpoints or (
+        _resolve_default_figdir("04_heat") / "broken_stick_results.csv"
+    )
+    if not breakpoints_path.is_file():
+        log.error("Broken-stick results not found: %s", breakpoints_path)
+        log.error("Run davasus-broken-stick first.")
+        return 2
+    breakpoints = pd.read_csv(breakpoints_path)
+
+    started = time.perf_counter()
+    con = open_readonly(args.db)
+    try:
+        fits = CircadianAnalysis(con, figdir=figdir, breakpoints=breakpoints).run()
+    finally:
+        con.close()
+
+    elapsed = time.perf_counter() - started
+    n_ok = int(fits["success"].sum()) if not fits.empty else 0
+    log.info(
+        "cosinor done in %.1fs — %d successful fits across %d animal-days, outputs in %s",
+        elapsed, n_ok, len(fits), figdir,
+    )
+    return 0
+
+
+def _build_zeitgeber_parser() -> argparse.ArgumentParser:
+    """Build the ``davasus-zeitgeber`` argument parser."""
+    p = argparse.ArgumentParser(
+        prog="davasus-zeitgeber",
+        description=(
+            "Actogram heatmaps, acrophase trajectory, and PLV-solar from a "
+            "previously-computed cosinor_fits.csv."
+        ),
+    )
+    p.add_argument("--db", type=Path, required=True, help="Path to cow.db")
+    p.add_argument(
+        "--figdir",
+        type=Path,
+        default=None,
+        help="Output directory (default: <repo>/figures/03_zeitgeber).",
+    )
+    p.add_argument(
+        "--cosinor",
+        type=Path,
+        default=None,
+        help=(
+            "Path to cosinor_fits.csv "
+            "(default: <repo>/figures/02_circadian/cosinor_fits.csv)."
+        ),
+    )
+    p.add_argument("-v", "--verbose", action="store_true", help="DEBUG logging.")
+    return p
+
+
+def zeitgeber_main(argv: list[str] | None = None) -> int:
+    """Run :class:`davasus.analysis.zeitgeber.ZeitgeberAnalysis`.
+
+    Returns:
+        Exit code: ``0`` on success, ``2`` if inputs are missing.
+    """
+    from davasus.analysis.zeitgeber import ZeitgeberAnalysis
+    from davasus.extract import open_readonly
+
+    args = _build_zeitgeber_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+
+    if not args.db.is_file():
+        log.error("Database not found: %s", args.db)
+        return 2
+    cosinor_path = args.cosinor or (
+        _resolve_default_figdir("02_circadian") / "cosinor_fits.csv"
+    )
+    if not cosinor_path.is_file():
+        log.error("Cosinor results not found: %s", cosinor_path)
+        log.error("Run davasus-cosinor first.")
+        return 2
+    cosinor_fits = pd.read_csv(cosinor_path)
+
+    figdir = args.figdir or _resolve_default_figdir("03_zeitgeber")
+
+    started = time.perf_counter()
+    con = open_readonly(args.db)
+    try:
+        ZeitgeberAnalysis(con, figdir=figdir, cosinor_fits=cosinor_fits).run()
+    finally:
+        con.close()
+    elapsed = time.perf_counter() - started
+    log.info("zeitgeber done in %.1fs — outputs in %s", elapsed, figdir)
     return 0
 
 
