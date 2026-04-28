@@ -1,12 +1,14 @@
 """Command-line entry points for DaVaSus.
 
-Currently exposes ``davasus-ingest`` (see :func:`ingest_main`).
+Exposes ``davasus-ingest`` (:func:`ingest_main`) and ``davasus-validate``
+(:func:`validate_main`).
 """
 
 from __future__ import annotations
 
 import argparse
 import logging
+import sqlite3
 import sys
 import time
 from pathlib import Path
@@ -14,6 +16,7 @@ from pathlib import Path
 from davasus.db import Database
 from davasus.ingest_merged import MergedIngestor
 from davasus.ingest_weather import WeatherIngestor
+from davasus.validate import Validator, render_report
 
 log = logging.getLogger("davasus")
 
@@ -122,6 +125,69 @@ def ingest_main(argv: list[str] | None = None) -> int:
             merged_counts["smaxtec"],
         )
     return 0
+
+
+def _build_validate_parser() -> argparse.ArgumentParser:
+    """Build the ``davasus-validate`` argument parser.
+
+    Returns:
+        Configured :class:`argparse.ArgumentParser`.
+    """
+    p = argparse.ArgumentParser(
+        prog="davasus-validate",
+        description="Run plausibility checks on a DaVaSus SQLite database.",
+    )
+    p.add_argument("--db", type=Path, required=True, help="Path to cow.db")
+    p.add_argument(
+        "--json",
+        type=Path,
+        default=None,
+        help="Optional path to write the report as JSON.",
+    )
+    p.add_argument(
+        "-v", "--verbose",
+        action="store_true",
+        help="Enable DEBUG logging.",
+    )
+    return p
+
+
+def validate_main(argv: list[str] | None = None) -> int:
+    """Run the validation pipeline against an existing database.
+
+    Args:
+        argv: Optional argv list (used in tests). When ``None`` the
+            real :data:`sys.argv` is consumed.
+
+    Returns:
+        Process exit code: ``0`` on a clean report, ``1`` if any orphan
+        rows or out-of-range values were found, ``2`` on file errors.
+    """
+    args = _build_validate_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+
+    if not args.db.is_file():
+        log.error("Database not found: %s", args.db)
+        return 2
+
+    con = sqlite3.connect(f"file:{args.db}?mode=ro", uri=True)
+    try:
+        report = Validator(con, args.db).run()
+    finally:
+        con.close()
+
+    print(render_report(report))
+
+    if args.json is not None:
+        args.json.write_text(report.to_json() + "\n")
+        log.info("wrote JSON report → %s", args.json)
+
+    flagged = (
+        any(o > 0 for o in report.orphans.values())
+        or any(r.out_of_range > 0 for r in report.ranges)
+        or bool(report.warnings)
+    )
+    return 1 if flagged else 0
 
 
 if __name__ == "__main__":  # pragma: no cover

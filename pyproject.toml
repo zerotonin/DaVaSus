@@ -55,6 +55,7 @@ docs = [
 
 [project.scripts]
 davasus-ingest = "davasus.cli:ingest_main"
+davasus-validate = "davasus.cli:validate_main"
 
 [project.urls]
 Repository = "https://github.com/zerotonin/davasus"
