@@ -95,7 +95,7 @@ class BrokenStickRegressor:
     # ── public API ──────────────────────────────────────────────────────
 
     def fit(self, x: Sequence[float], y: Sequence[float]) -> BrokenStickResult:
-        """Fit the broken-stick model to ``(x, y)``.
+        """Fit the broken-stick model with the biological constraint.
 
         Args:
             x: Predictor values (THI). Will be coerced to ``float``.
@@ -104,32 +104,55 @@ class BrokenStickRegressor:
         Returns:
             A :class:`BrokenStickResult`. ``success=False`` is returned
             (rather than raising) when the data fails preconditions or
-            the biological constraint is violated.
+            the biological constraint :math:`\\beta_2 > \\beta_1 \\wedge
+            \\beta_2 > 0` is violated.
+        """
+        result = self.fit_unconstrained(x, y)
+        if result.success and not (
+            result.slope_above > result.slope_below and result.slope_above > 0.0
+        ):
+            result = self._failed(
+                result.n_points,
+                f"biological constraint failed "
+                f"(b1={result.slope_below:.3g}, b2={result.slope_above:.3g})",
+            )
+        self.result = result
+        return result
+
+    def fit_unconstrained(
+        self, x: Sequence[float], y: Sequence[float]
+    ) -> BrokenStickResult:
+        """Fit the broken-stick model **without** the biological constraint.
+
+        Use this for diagnostic plots when the constraint-violating shape
+        is the very thing you want to see (e.g. inverted-V or downward-
+        step animals). The standard :meth:`fit` calls this and then
+        applies the constraint.
+
+        Args:
+            x: Predictor values.
+            y: Response values.
+
+        Returns:
+            A :class:`BrokenStickResult`. ``success=False`` only for
+            data-quality preconditions (too few points, degenerate
+            range), never for the biological-shape constraint.
         """
         xa, ya = self._clean(x, y)
         if xa.size < self.min_points:
-            self.result = self._failed(xa.size, "too few points")
-            return self.result
+            return self._failed(xa.size, "too few points")
 
         bp_lo, bp_hi = self._grid_bounds(xa)
         if bp_lo >= bp_hi:
-            self.result = self._failed(xa.size, "degenerate THI range")
-            return self.result
+            return self._failed(xa.size, "degenerate THI range")
 
         bp_best, sse_best, params_best = self._grid_search(xa, ya, bp_lo, bp_hi)
         bp_refined, params_refined, sse_refined = self._refine(
             xa, ya, bp_best, sse_best, params_best, bp_lo, bp_hi
         )
         a, b1, b2 = params_refined
-
-        if not (b2 > b1 and b2 > 0.0):
-            self.result = self._failed(
-                xa.size, f"biological constraint failed (b1={b1:.3g}, b2={b2:.3g})"
-            )
-            return self.result
-
         rmse, r2 = self._goodness_of_fit(xa, ya, bp_refined, a, b1, b2, sse_refined)
-        self.result = BrokenStickResult(
+        return BrokenStickResult(
             breakpoint=float(bp_refined),
             intercept=float(a),
             slope_below=float(b1),
@@ -139,7 +162,6 @@ class BrokenStickRegressor:
             n_points=int(xa.size),
             success=True,
         )
-        return self.result
 
     def predict(self, x: Sequence[float]) -> np.ndarray:
         """Predict ``y`` from ``x`` using the fitted parameters.

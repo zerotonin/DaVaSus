@@ -69,3 +69,17 @@ def test_biological_constraint_rejects_inverted_v():
     result = fit.fit(x, y)
     assert result.success is False
     assert "constraint" in result.reason
+
+
+def test_fit_unconstrained_returns_inverted_v_parameters():
+    """``fit_unconstrained`` succeeds and exposes the negative slope_above."""
+    rng = np.random.default_rng(7)
+    x = rng.uniform(50.0, 90.0, size=400)
+    bp_true = 70.0
+    y = 39.0 + 0.05 * x + (-0.10 - 0.05) * np.maximum(0.0, x - bp_true)
+    y += rng.normal(scale=0.02, size=x.size)
+    fit = BrokenStickRegressor()
+    result = fit.fit_unconstrained(x, y)
+    assert result.success is True
+    assert result.slope_above < 0  # inverted-V signature is preserved
+    assert abs(result.breakpoint - bp_true) < 1.5
