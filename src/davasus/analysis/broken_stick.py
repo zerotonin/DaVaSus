@@ -201,6 +201,105 @@ class BrokenStickAnalysis:
         for label, row in picks.items():
             self._plot_one_fit(int(row["animal_id"]), row, label)
 
+    def plot_diagnostic_animals(self, animal_ids: list[int]) -> pd.DataFrame:
+        """Plot per-animal unconstrained fits (constraint disabled).
+
+        Used to visualise animals that failed the biological-constraint
+        check in :meth:`run` — typically inverted-V (β₂ < 0) cases
+        where rumen temperature *cools* with rising THI. The actual
+        fitted curve is plotted regardless of constraint, so the
+        anomalous shape becomes visible.
+
+        Args:
+            animal_ids: Animal ids to diagnose.
+
+        Returns:
+            DataFrame with one row per animal containing the
+            unconstrained fit parameters.
+        """
+        thi_col = f"thi_{self.thi_mode}"
+        rows: list[dict] = []
+        regressor = BrokenStickRegressor()
+        for animal_id in animal_ids:
+            df = self._extractor.extract(int(animal_id))
+            if df.empty:
+                log.warning("animal %d: no data for diagnostic", animal_id)
+                continue
+            clean = df[[thi_col, "body_temp"]].dropna().rename(columns={thi_col: "thi"})
+            if clean.empty:
+                continue
+            result = regressor.fit_unconstrained(
+                clean["thi"].to_numpy(), clean["body_temp"].to_numpy()
+            )
+            rows.append({"animal_id": int(animal_id), **asdict(result)})
+            if result.success:
+                self._plot_one_diagnostic(int(animal_id), result, clean)
+        out = pd.DataFrame(rows)
+        if not out.empty:
+            out_path = self.figdir / "broken_stick_diagnostic.csv"
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            out.to_csv(out_path, index=False)
+            log.info("wrote %s — %d diagnostic rows", out_path, len(out))
+        return out
+
+    def _plot_one_diagnostic(
+        self,
+        animal_id: int,
+        result: BrokenStickResult,
+        df: pd.DataFrame,
+    ) -> None:
+        """Render the unconstrained-fit diagnostic plot for one animal.
+
+        Args:
+            animal_id: Animal id.
+            result: Unconstrained :class:`BrokenStickResult`.
+            df: Long-format DataFrame with ``thi`` and ``body_temp``.
+        """
+        bp = float(result.breakpoint)
+        a = float(result.intercept)
+        b1 = float(result.slope_below)
+        b2 = float(result.slope_above)
+        x_line = np.linspace(df["thi"].min(), df["thi"].max(), 200)
+        y_line = a + b1 * x_line + (b2 - b1) * np.maximum(0.0, x_line - bp)
+
+        fig, ax = plt.subplots(figsize=(6, 4))
+        ax.scatter(
+            df["thi"], df["body_temp"],
+            s=4, alpha=0.15,
+            color=colour_for_variable("thi_" + self.thi_mode),
+        )
+        ax.plot(
+            x_line, y_line,
+            color=colour_for_category("fit_line"),
+            lw=2,
+            label=f"fit  (β₁={b1:.4g}, β₂={b2:.4g})",
+        )
+        ax.axvline(
+            bp,
+            color=colour_for_category("fit_line"),
+            lw=1, ls="--", alpha=0.6, label=f"bp = {bp:.2f}",
+        )
+        if b2 < 0.0:
+            ax.text(
+                0.02, 0.98,
+                "[!] slope_above < 0\n(inverted-V or downward-step)",
+                transform=ax.transAxes,
+                va="top", ha="left", fontsize=9,
+                bbox={"facecolor": "white", "edgecolor": "gray", "alpha": 0.8},
+            )
+        ax.set_xlabel(f"THI ({self.thi_mode.upper()})")
+        ax.set_ylabel("Rumen temperature (°C, no drink cycles)")
+        ax.set_title(
+            f"animal {animal_id} — diagnostic "
+            f"(R² = {result.r2:.3f}, n = {result.n_points})"
+        )
+        ax.legend(loc="best", fontsize=9)
+        save_triplet(
+            fig, df.assign(animal_id=animal_id),
+            self.figdir / f"diagnostic_animal_{animal_id}",
+        )
+        plt.close(fig)
+
     def _plot_one_fit(self, animal_id: int, row: pd.Series, label: str) -> None:
         """Plot the data and the fitted line for one animal.
 

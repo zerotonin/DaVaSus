@@ -156,6 +156,16 @@ def _build_broken_stick_parser() -> argparse.ArgumentParser:
         help="THI variant (default: mader = wind+solar adjusted).",
     )
     p.add_argument(
+        "--diagnose",
+        type=str,
+        default=None,
+        help=(
+            "Comma-separated animal_ids to plot with the biological "
+            "constraint disabled (e.g. 42473,43454). Skips the standard "
+            "herd-wide run; only writes diagnostic plots."
+        ),
+    )
+    p.add_argument(
         "-v", "--verbose",
         action="store_true",
         help="Enable DEBUG logging.",
@@ -191,6 +201,15 @@ def broken_stick_main(argv: list[str] | None = None) -> int:
     con = open_readonly(args.db)
     try:
         analysis = BrokenStickAnalysis(con, figdir=figdir, thi_mode=args.thi_mode)
+        if args.diagnose:
+            ids = [int(s.strip()) for s in args.diagnose.split(",") if s.strip()]
+            diag = analysis.plot_diagnostic_animals(ids)
+            elapsed = time.perf_counter() - started
+            log.info(
+                "broken-stick diagnostic done in %.1fs — %d animals, outputs in %s",
+                elapsed, len(diag), figdir,
+            )
+            return 0
         results = analysis.run()
     finally:
         con.close()
