@@ -1,5 +1,8 @@
 # DaVaSus
 
+![Tests](https://github.com/zerotonin/DaVaSus/actions/workflows/tests.yml/badge.svg)
+![Lint](https://github.com/zerotonin/DaVaSus/actions/workflows/lint.yml/badge.svg)
+
 Pasture-based mother-cow sensor data pipeline. Sister project to
 [DigiMuh](https://github.com/zerotonin/digimuh) (stall-based dairy);
 DaVaSus is the pasture counterpart with smaXtec rumen boluses,

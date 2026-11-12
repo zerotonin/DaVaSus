@@ -24,10 +24,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
           cache: pip
 
-      - name: Install package with dev extras
+      - name: Install package with dev + analysis extras
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev,analysis]"
 
       - name: Run pytest
         run: pytest -ra --cov=davasus --cov-report=term-missing
