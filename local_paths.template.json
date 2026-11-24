@@ -1,0 +1,17 @@
+{
+  "active_profile": "local",
+  "profiles": {
+    "local": {
+      "data_root": "<absolute path to the folder holding the raw CSVs>",
+      "db_dir": "<absolute path where the SQLite databases live>",
+      "heifer_csv": "all_heifers_Analysis_ohne_3907776189_1870232730.csv"
+    },
+    "hpc": {
+      "data_root": "<absolute path to the raw data on the cluster>",
+      "db_dir": "<absolute path to scratch for the databases>",
+      "heifer_csv": "all_heifers_Analysis_ohne_3907776189_1870232730.csv",
+      "slurm_account": "<slurm account>",
+      "slurm_partition": "<slurm partition>"
+    }
+  }
+}

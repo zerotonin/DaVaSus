@@ -39,5 +39,6 @@ env/
 Thumbs.db
 
 # Local config
+local_paths.json
 config.yaml
 .env
