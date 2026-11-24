@@ -62,6 +62,7 @@ davasus-broken-stick = "davasus.cli:broken_stick_main"
 davasus-cosinor = "davasus.cli:cosinor_main"
 davasus-zeitgeber = "davasus.cli:zeitgeber_main"
 davasus-vf-ingest = "davasus.vf.cli:ingest_main"
+davasus-vf-figures = "davasus.vf.cli:figures_main"
 
 [project.urls]
 Repository = "https://github.com/zerotonin/davasus"

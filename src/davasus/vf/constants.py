@@ -11,6 +11,16 @@ from __future__ import annotations
 
 from enum import IntEnum
 
+from davasus.constants import (
+    WONG_BLACK,
+    WONG_BLUE,
+    WONG_GREY,
+    WONG_ORANGE,
+    WONG_SKY,
+    WONG_VERMILLION,
+    WONG_YELLOW,
+)
+
 # ┌────────────────────────────────────────────────────────────┐
 # │ Outside codes  « glossary: Erklaerung_Attribute.txt »      │
 # └────────────────────────────────────────────────────────────┘
@@ -57,3 +67,26 @@ SR_CRITERION: float = 0.8
 PERMUTATIONS: int = 10_000
 
 FIGURE_SUBDIR: str = "08_vf_leadership"
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Figures and movie  « semantic colours, scales »            │
+# └────────────────────────────────────────────────────────────┘
+
+VF_COLOURS: dict[str, str] = {
+    "audio": WONG_ORANGE,
+    "pulse": WONG_VERMILLION,
+    "sr": WONG_BLUE,
+    "ratio_file": WONG_SKY,
+    "herd": WONG_GREY,
+    "gps_error": WONG_BLACK,
+    "manual_herding": WONG_YELLOW,
+}
+TRAJECTORY_CMAP: str = "twilight"
+HEATMAP_CMAP: str = "viridis"
+FOOTPRINT_GREY: str = WONG_GREY
+HEATMAP_BIN_M: float = 5.0
+MOVIE_FRAME_HOURS: int = 1
+MOVIE_FPS: int = 24
+MOVIE_DPI: int = 120
+SCALE_BAR_M: float = 50.0
+MIN_DAILY_AUDIO: int = 5

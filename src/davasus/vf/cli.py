@@ -16,7 +16,10 @@ import sys
 import time
 from pathlib import Path
 
-from davasus.config import LocalPathsError, load_local_paths
+import pandas as pd
+
+from davasus.config import REPO_ROOT, LocalPathsError, load_local_paths
+from davasus.vf.constants import FIGURE_SUBDIR, HEATMAP_BIN_M, MOVIE_FPS, MOVIE_FRAME_HOURS
 from davasus.vf.ingest import CHUNK_ROWS, HeiferVFIngestor
 
 log = logging.getLogger(__name__)
@@ -99,6 +102,100 @@ def _run_with_progress(
 def _count_rows(path: Path) -> int:
     with open(path, "rb") as fh:
         return sum(chunk.count(b"\n") for chunk in iter(lambda: fh.read(1 << 24), b"")) - 1
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Figures  « davasus-vf-figures »                            │
+# └────────────────────────────────────────────────────────────┘
+
+
+def build_figures_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-figures",
+        description="First-look M8 figures: 24 h trajectories, cue timeline, herd movie.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "figures" / FIGURE_SUBDIR)
+    p.add_argument("--lom", help="Focal ear tag (default: most audio cues)")
+    p.add_argument("--dates", nargs="+",
+                   help="UTC days for trajectories (default: first VF cut-off day and the day before)")
+    p.add_argument("--no-movie", action="store_true")
+    p.add_argument("--fps", type=int, default=MOVIE_FPS)
+    p.add_argument("--bin-m", type=float, default=HEATMAP_BIN_M)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def figures_main(argv: list[str] | None = None) -> int:
+    """Write the first-look figures; returns the process exit code."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from davasus.vf.geometry import LocalProjection
+    from davasus.vf.learning import compute_daily_stimulus_summary
+    from davasus.vf.load import find_most_stimulated_heifer, load_events, load_fixes
+    from davasus.vf.movie import compute_occupancy_frames, render_occupancy_movie, summarise_frames
+    from davasus.vf.viz import plot_daily_trajectory, plot_stimulus_timeline
+    from davasus.viz import save_triplet
+
+    args = build_figures_parser().parse_args(argv)
+    logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    try:
+        db_path = args.db or load_local_paths().heifer_db_path
+    except LocalPathsError as exc:
+        log.error("%s", exc)
+        return 2
+    if not db_path.is_file():
+        log.error("Database not found: %s (run davasus-vf-ingest first)", db_path)
+        return 2
+
+    connection = sqlite3.connect(db_path)
+    try:
+        fixes = load_fixes(connection)
+        events = load_events(connection)
+        lom = args.lom or find_most_stimulated_heifer(connection)
+    finally:
+        connection.close()
+    projection = LocalProjection.from_fixes(fixes)
+    log.info("focal heifer %s; projection centre %.5f N %.5f E", lom,
+             projection.lat0, projection.lon0)
+
+    for day in args.dates or default_trajectory_days(events):
+        start = pd.Timestamp(day, tz="UTC")
+        day_fixes = fixes[(fixes["timestamp"] >= start)
+                          & (fixes["timestamp"] < start + pd.Timedelta(days=1))]
+        fig, data = plot_daily_trajectory(day_fixes, lom, projection)
+        written = save_triplet(fig, data, args.out / f"trajectory_24h_{lom}_{start:%Y%m%d}")
+        plt.close(fig)
+        log.info("wrote %s", written["png"])
+
+    daily = compute_daily_stimulus_summary(fixes)
+    fig, data = plot_stimulus_timeline(daily, events, lom)
+    written = save_triplet(fig, data, args.out / f"cue_timeline_{lom}")
+    plt.close(fig)
+    daily.to_csv(args.out / "cue_daily_all_heifers.csv", index=False)
+    log.info("wrote %s", written["png"])
+
+    if not args.no_movie:
+        frames = compute_occupancy_frames(fixes, projection, args.bin_m, MOVIE_FRAME_HOURS)
+        movie = args.out / "herd_occupancy_1day_per_s.mp4"
+        log.info("rendering %d frames at %d fps", len(frames.starts), args.fps)
+        render_occupancy_movie(frames, events, movie, fps=args.fps)
+        summarise_frames(frames).to_csv(movie.with_suffix(".csv"), index=False)
+        log.info("wrote %s", movie)
+    return 0
+
+
+def default_trajectory_days(events: pd.DataFrame) -> list[str]:
+    """First virtual-fence cut-off day (not manual herding) and the day before."""
+    cut_offs = events[events["cut_off_parcel"].notna() & (events["manual_herding"] == 0)]
+    if cut_offs.empty:
+        return [events["start_utc"].min().strftime("%Y-%m-%d")]
+    day = cut_offs["start_utc"].min().floor("D")
+    return [(day - pd.Timedelta(days=1)).strftime("%Y-%m-%d"), day.strftime("%Y-%m-%d")]
 
 
 if __name__ == "__main__":

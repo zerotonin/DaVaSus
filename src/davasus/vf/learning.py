@@ -34,6 +34,41 @@ def convert_audio_pulse_ratio_to_sr(ratio: float) -> float:
     return 2.0 - 1.0 / ratio
 
 
+def compute_audio_pulse_ratio(audio: float, pulse: float) -> float:
+    """The file's ratio R = A / (A + P) from summed counts; NaN when A = 0."""
+    if audio <= 0:
+        return float("nan")
+    return audio / (audio + pulse)
+
+
+def compute_daily_stimulus_summary(fixes: pd.DataFrame) -> pd.DataFrame:
+    """Per animal and UTC day: cue counts, SR and R, plus cumulative SR.
+
+    Args:
+        fixes: Columns ``lom``, ``timestamp`` (UTC), ``audio_stim_new``
+               and ``pulse_stim_new`` (cues per minute).
+
+    Returns:
+        Columns ``lom``, ``date``, ``audio``, ``pulse``, ``sr``,
+        ``ratio_file``, ``audio_cum``, ``pulse_cum``, ``sr_cum``.
+    """
+    daily = (
+        fixes.assign(date=fixes["timestamp"].dt.floor("D"))
+        .groupby(["lom", "date"], as_index=False)
+        .agg(audio=("audio_stim_new", "sum"), pulse=("pulse_stim_new", "sum"))
+    )
+    daily["sr"] = _pairwise(compute_success_ratio, daily["audio"], daily["pulse"])
+    daily["ratio_file"] = _pairwise(compute_audio_pulse_ratio, daily["audio"], daily["pulse"])
+    daily["audio_cum"] = daily.groupby("lom")["audio"].cumsum()
+    daily["pulse_cum"] = daily.groupby("lom")["pulse"].cumsum()
+    daily["sr_cum"] = _pairwise(compute_success_ratio, daily["audio_cum"], daily["pulse_cum"])
+    return daily
+
+
+def _pairwise(func, first: pd.Series, second: pd.Series) -> list[float]:
+    return [func(a, b) for a, b in zip(first, second, strict=True)]
+
+
 def compute_block_success_ratios(
     exposures: pd.DataFrame,
     block_size: int = SR_BLOCK_SIZE,
