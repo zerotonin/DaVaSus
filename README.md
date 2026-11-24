@@ -23,13 +23,29 @@ Pre-alpha — ingestion pipeline under construction.
 git clone <url>
 cd DaVaSus
 
-# conda (recommended)
+# conda (recommended); installs the analysis, stats and dev extras
 conda env create -f environment.yml
 conda activate davasus
 
 # or pip
-pip install -e ".[dev]"
+pip install -e ".[analysis,stats,dev]"
 ```
+
+The `stats` extra pulls [reRandomStats](https://github.com/zerotonin/reRandomStats)
+(pinned tag) from GitHub.
+
+### Machine-specific paths (do this first)
+
+```bash
+cp local_paths.template.json local_paths.json
+```
+
+Fill in `data_root` (folder with the raw CSVs), `db_dir` (where the SQLite
+databases are written) and `heifer_csv` for each profile you use. The file is
+gitignored. Any key can be overridden with `DAVASUS_<KEY>` (for example
+`DAVASUS_DATA_ROOT`); `DAVASUS_PROFILE` picks the profile. Check the result
+with `python -m davasus.config`; it fails with a clear message when the file
+is missing or a placeholder is still set.
 
 ## Quick start
 
@@ -47,6 +63,21 @@ davasus-ingest \
     --weather /media/geuba03p/DATADRIVE1/DaVaSus/Weather_20240221to20241218.csv \
     --db cow.db
 ```
+
+### Heifer virtual-fence study (M8)
+
+```bash
+# paths come from local_paths.json (heifer_csv, db_dir)
+davasus-vf-ingest                 # writes <db_dir>/heifer_vf.db
+davasus-vf-ingest --test-n 50000  # smoke test
+davasus-vf-ingest --overwrite     # rebuild from the CSV
+```
+
+The heifer data go into their own database, `heifer_vf.db`, separate from
+`cow.db`: a different herd, and the CSV's repeated weather, parcel log and
+animal register are stored once each. Raw values are kept; only the
+eShepherd no-fence sentinel becomes `NULL`. Plausibility filters are applied
+at analysis time.
 
 ## Repository layout
 
