@@ -18,7 +18,10 @@ dependencies:
   - pytest-cov
   - ruff
   - sqlite
+  - ffmpeg
   - statsmodels
   - prettytable
+  - pyside6
+  - pyqtgraph
   - pip:
-      - -e ".[analysis,stats,dev]"
+      - -e ".[analysis,stats,gui,dev]"

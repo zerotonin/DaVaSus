@@ -45,6 +45,10 @@ analysis = [
 stats = [
     "rerandomstats @ git+https://github.com/zerotonin/reRandomStats.git@v0.4.0",
 ]
+gui = [
+    "PySide6 >= 6.5",
+    "pyqtgraph >= 0.13",
+]
 dev = [
     "pytest >= 7.0",
     "pytest-cov >= 4.0",
@@ -63,6 +67,8 @@ davasus-cosinor = "davasus.cli:cosinor_main"
 davasus-zeitgeber = "davasus.cli:zeitgeber_main"
 davasus-vf-ingest = "davasus.vf.cli:ingest_main"
 davasus-vf-figures = "davasus.vf.cli:figures_main"
+davasus-vf-dashboard = "davasus.vf.cli:dashboard_main"
+davasus-vf-spaceweather = "davasus.vf.cli:spaceweather_main"
 
 [project.urls]
 Repository = "https://github.com/zerotonin/davasus"

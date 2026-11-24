@@ -79,6 +79,27 @@ animal register are stored once each. Raw values are kept; only the
 eShepherd no-fence sentinel becomes `NULL`. Plausibility filters are applied
 at analysis time.
 
+```bash
+davasus-vf-figures                # 24 h trajectories, cue timeline, herd movie
+davasus-vf-spaceweather           # GFZ Hp30 / ap30 / Kp for the trial into heifer_vf.db
+davasus-vf-dashboard              # interactive desktop dashboard (needs the gui extra)
+```
+
+**Dashboard.** `pip install -e ".[gui]"` (PySide6, pyqtgraph). The map shows
+every heifer at the current minute, coloured by its eShepherd `Outside`
+code, with trails and the herd centroid; click a heifer or a table row to
+select it. Dockable panels show the herd table, the selected heifer
+(register, position, fence distance, cues and SR), the active parcel event,
+weather with THI and space weather. The timeline at the bottom covers the
+whole trial; click or drag in it to jump. Keys: Space plays or pauses,
+Left/Right step one minute, Shift+Left/Right one hour. The dock layout is
+remembered; *View → Reset layout* restores it.
+
+The basemap uses OpenStreetMap tiles (© OpenStreetMap contributors),
+downloaded once into `<data_root>/osm_tiles` and reused offline; pass
+`--no-tiles` to skip them. Space-weather indices are from GFZ Potsdam
+(CC BY 4.0) and are cached as JSON under `<data_root>/space_weather`.
+
 ## Repository layout
 
 ```

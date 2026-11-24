@@ -22,6 +22,9 @@ from davasus.config import REPO_ROOT, LocalPathsError, load_local_paths
 from davasus.vf.constants import FIGURE_SUBDIR, HEATMAP_BIN_M, MOVIE_FPS, MOVIE_FRAME_HOURS
 from davasus.vf.ingest import CHUNK_ROWS, HeiferVFIngestor
 
+TILE_CACHE_SUBDIR: str = "osm_tiles"
+SPACE_WEATHER_SUBDIR: str = "space_weather"
+
 log = logging.getLogger(__name__)
 
 
@@ -196,6 +199,109 @@ def default_trajectory_days(events: pd.DataFrame) -> list[str]:
         return [events["start_utc"].min().strftime("%Y-%m-%d")]
     day = cut_offs["start_utc"].min().floor("D")
     return [(day - pd.Timedelta(days=1)).strftime("%Y-%m-%d"), day.strftime("%Y-%m-%d")]
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Dashboard  « davasus-vf-dashboard »                        │
+# └────────────────────────────────────────────────────────────┘
+
+
+def build_dashboard_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-dashboard",
+        description="Interactive heifer dashboard: map, herd, weather and space weather.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--tile-cache", type=Path,
+                   help="OSM tile cache (default: <data_root>/osm_tiles)")
+    p.add_argument("--no-tiles", action="store_true", help="No OpenStreetMap basemap")
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def dashboard_main(argv: list[str] | None = None) -> int:
+    """Open the desktop dashboard; returns the Qt exit code."""
+    args = build_dashboard_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    try:
+        db_path, data_root = _resolve_db_and_root(args.db, need_root=args.tile_cache is None
+                                                  and not args.no_tiles)
+    except LocalPathsError as exc:
+        log.error("%s", exc)
+        return 2
+    if not db_path.is_file():
+        log.error("Database not found: %s (run davasus-vf-ingest first)", db_path)
+        return 2
+    tile_dir = None if args.no_tiles else (args.tile_cache or data_root / TILE_CACHE_SUBDIR)
+    try:
+        from davasus.vf.dashboard.app import run_dashboard
+    except ImportError as exc:
+        log.error("GUI dependencies missing (%s); pip install -e \".[gui]\"", exc)
+        return 2
+    return run_dashboard(db_path, tile_dir)
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Space weather  « davasus-vf-spaceweather »                 │
+# └────────────────────────────────────────────────────────────┘
+
+
+def build_spaceweather_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-spaceweather",
+        description="Fetch GFZ Hp30 / ap30 / Kp for the trial window into heifer_vf.db.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--cache", type=Path,
+                   help="JSON download cache (default: <data_root>/space_weather)")
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def spaceweather_main(argv: list[str] | None = None) -> int:
+    """Download (or reuse cached) indices and upsert them; returns the exit code."""
+    from davasus.vf.gnss_quality import SpaceWeatherFetcher, write_space_weather
+
+    args = build_spaceweather_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    try:
+        db_path, data_root = _resolve_db_and_root(args.db, need_root=args.cache is None)
+    except LocalPathsError as exc:
+        log.error("%s", exc)
+        return 2
+    if not db_path.is_file():
+        log.error("Database not found: %s (run davasus-vf-ingest first)", db_path)
+        return 2
+    connection = sqlite3.connect(db_path)
+    try:
+        first, last = connection.execute(
+            "SELECT MIN(timestamp), MAX(timestamp) FROM heifer_fixes").fetchone()
+        if first is None:
+            log.error("heifer_fixes is empty")
+            return 2
+        start = pd.Timestamp(first).floor("D").tz_localize(None)
+        end = (pd.Timestamp(last).floor("D") + pd.Timedelta(days=1)).tz_localize(None)
+        fetcher = SpaceWeatherFetcher(args.cache or data_root / SPACE_WEATHER_SUBDIR)
+        table = fetcher.fetch_hp30(str(start), str(end))
+        n = write_space_weather(connection, table)
+    finally:
+        connection.close()
+    log.info("wrote %d space-weather rows (%s to %s); data: GFZ Potsdam, CC BY 4.0", n,
+             start.date(), end.date())
+    return 0
+
+
+def _configure_logging(verbose: bool) -> None:
+    logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+
+
+def _resolve_db_and_root(db: Path | None, need_root: bool) -> tuple[Path, Path | None]:
+    """Database path and data_root; local_paths.json only when something is missing."""
+    if db is not None and not need_root:
+        return db, None
+    paths = load_local_paths()
+    return db or paths.heifer_db_path, paths.data_root
 
 
 if __name__ == "__main__":
