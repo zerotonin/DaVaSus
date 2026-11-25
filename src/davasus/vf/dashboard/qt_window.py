@@ -66,6 +66,9 @@ LAYOUT_VERSION: int = 1
 LARGE_STEP_MIN: int = 60
 SIDE_DOCK_WIDTH_PX: int = 380
 ROW_MODE_KEY: str = "timeline_row_mode"
+DEFAULT_WINDOW_PX: tuple[int, int] = (1700, 1050)
+SCREEN_FILL: float = 0.95
+TIMELINE_SHARE: float = 0.42
 
 
 class DashboardWindow(QMainWindow):
@@ -286,7 +289,8 @@ class DashboardWindow(QMainWindow):
         space = self._add_dock("Space weather", self.space_panel, right, menu)
         self.tabifyDockWidget(weather, space)
         weather.raise_()
-        self._add_dock("Timeline", self._wrap_timeline(), bottom, menu, scroll=False)
+        self.timeline_dock = self._add_dock("Timeline", self._wrap_timeline(), bottom, menu,
+                                            scroll=False)
         self.resizeDocks([time_dock, self.heifer_dock], [SIDE_DOCK_WIDTH_PX] * 2,
                          Qt.Orientation.Horizontal)
         self.resizeDocks([time_dock, herd_dock], [220, 600], Qt.Orientation.Vertical)
@@ -305,13 +309,13 @@ class DashboardWindow(QMainWindow):
         self.row_mode_box.addItems(list(TIMELINE_ROW_MODES))
         self.row_mode_box.currentTextChanged.connect(self.timeline.set_row_mode)
         row.addWidget(self.row_mode_box)
-        row.addStretch(1)
         key = QLabel(
             f"<span style='background:{REDUCED_GPS_COLOUR}'>&nbsp;&nbsp;&nbsp;&nbsp;</span> "
             f"reduced GPS sensitivity (Hp30 \u2265 {HP30_STORM_THRESHOLD:g}) &nbsp;&nbsp; "
             f"<span style='background:{MANUAL_HERDING_COLOUR}'>&nbsp;&nbsp;&nbsp;&nbsp;</span> "
             "manual herding &nbsp;&nbsp; dashed: parcel activation ")
-        row.addWidget(key)
+        key.setWordWrap(True)
+        row.addWidget(key, 1)
         layout.addLayout(row)
         layout.addWidget(self.timeline)
         return holder
@@ -338,7 +342,7 @@ class DashboardWindow(QMainWindow):
         if geometry is not None:
             self.restoreGeometry(geometry)
         else:
-            self.resize(1600, 1000)
+            self._fit_to_screen()
         if state is not None:
             self.restoreState(state, LAYOUT_VERSION)
         mode = settings.value(ROW_MODE_KEY, TIMELINE_ROW_MODES[0])
@@ -347,8 +351,21 @@ class DashboardWindow(QMainWindow):
         self.row_mode_box.setCurrentText(mode)
         self.timeline.set_row_mode(mode)
 
+    def _fit_to_screen(self) -> None:
+        """First start: fill most of the screen and give the timeline a fair share."""
+        screen = self.screen().availableGeometry()
+        width = min(DEFAULT_WINDOW_PX[0], int(screen.width() * SCREEN_FILL))
+        height = min(DEFAULT_WINDOW_PX[1], int(screen.height() * SCREEN_FILL))
+        self.resize(width, height)
+        self._size_timeline()
+
+    def _size_timeline(self) -> None:
+        self.resizeDocks([self.timeline_dock], [int(self.height() * TIMELINE_SHARE)],
+                         Qt.Orientation.Vertical)
+
     def _reset_layout(self) -> None:
         self.restoreState(self._default_state, LAYOUT_VERSION)
+        self._size_timeline()
 
     def closeEvent(self, event) -> None:  # noqa: N802
         settings = QSettings(SETTINGS_ORG, SETTINGS_APP)

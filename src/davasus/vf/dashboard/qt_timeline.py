@@ -34,7 +34,12 @@ from davasus.vf.dashboard.data import (
 )
 from davasus.vf.gnss_quality import HP30_STORM_THRESHOLD
 
-PLOT_HEIGHT_PX: int = 90
+# Rows shrink to this before the widget refuses to get smaller; below it
+# the plots would be drawn outside the visible area.
+PLOT_HEIGHT_PX: int = 45
+N_VISIBLE_ROWS: int = 4
+LEGEND_TEXT_SIZE: str = "8pt"
+DATE_AXIS_PX: int = 30
 SWAP_ROW: int = 1
 DAY_S: float = 86_400.0
 BAR_WIDTH_DAYS: float = 0.8
@@ -58,11 +63,10 @@ class TimelineWidget(pg.GraphicsLayoutWidget):
         self._hourly = hourly
         self._cursors: list[pg.InfiniteLine] = []
         self._plots = [
-            self._add_plot(0, "°C / THI", [("air_temp_avg", "air T"), ("thi_nrc", "THI")]),
-            self._add_plot(1, "Hp30 / Kp", [("hp30", "Hp30"), ("kp", "Kp")]),
-            self._add_plot(2, "cues h⁻¹", [("audio", "herd audio"),
-                                                    ("pulse", "herd pulses")]),
-            self._add_plot(3, "plausible", [("plausible_share", "share plausible fixes")]),
+            self._add_plot(0, "°C, THI", [("air_temp_avg", "air T (°C)"), ("thi_nrc", "THI")]),
+            self._add_plot(1, "Hp30, Kp", [("hp30", "Hp30"), ("kp", "Kp")]),
+            self._add_plot(2, "cues/h", [("audio", "herd audio"), ("pulse", "herd pulses")]),
+            self._add_plot(3, "valid", [("plausible_share", "share plausible fixes")]),
         ]
         self._plots[1].addItem(pg.InfiniteLine(HP30_STORM_THRESHOLD, angle=0,
                                                pen=pg.mkPen("k", style=Qt.PenStyle.DotLine)))
@@ -81,6 +85,7 @@ class TimelineWidget(pg.GraphicsLayoutWidget):
         self._row_mode = TIMELINE_ROW_SPACE_WEATHER
         self._plots[0].setXRange(self._t[0], self._t[-1], padding=0.01)
         self.scene().sigMouseClicked.connect(self._on_click)
+        self.setMinimumHeight(N_VISIBLE_ROWS * PLOT_HEIGHT_PX + DATE_AXIS_PX)
 
     def _add_plot(self, row: int, ylabel: str, series: list[tuple[str, str]]) -> pg.PlotItem:
         plot = self.addPlot(row=row, col=0, axisItems={"bottom": pg.DateAxisItem(utcOffset=0)})
@@ -100,7 +105,8 @@ class TimelineWidget(pg.GraphicsLayoutWidget):
         plot.setMenuEnabled(False)
         plot.setMouseEnabled(x=True, y=False)
         plot.showGrid(x=False, y=False)
-        legend = plot.addLegend(offset=(5, 2), labelTextColor="k", colCount=4)
+        legend = plot.addLegend(offset=(5, 0), labelTextColor="k", colCount=6,
+                                labelTextSize=LEGEND_TEXT_SIZE, verticalSpacing=-6)
         legend.setBrush(pg.mkBrush(255, 255, 255, 180))
 
     def add_cursor(self, plot: pg.PlotItem) -> None:
@@ -183,7 +189,7 @@ class FocalDailyPlot:
         self.timeline = timeline
         data = timeline.data
         self.plot = pg.PlotItem(axisItems={"bottom": pg.DateAxisItem(utcOffset=0)})
-        timeline.configure_plot(self.plot, "km d\u207b\u00b9")
+        timeline.configure_plot(self.plot, "km/d")
         self.plot.hide()
         herd = compute_herd_daily_km(data)
         centre = _epoch_s(herd.index) + DAY_S / 2
@@ -198,11 +204,10 @@ class FocalDailyPlot:
         self._bars = pg.BarGraphItem(x=[], height=[], width=BAR_WIDTH_DAYS * DAY_S,
                                      brush=pg.mkBrush(DASHBOARD_COLOURS["focal"]), pen=None)
         self.plot.addItem(self._bars)
-        self.plot.legend.addItem(self._bars, "her km")
 
         self._cue_box = pg.ViewBox()
         self.plot.showAxis("right")
-        self.plot.getAxis("right").setLabel("cues d\u207b\u00b9")
+        self.plot.getAxis("right").setLabel("cues/d")
         self.plot.getAxis("right").linkToView(self._cue_box)
         self._cue_box.setXLink(self.plot)
         self._cue_box.setMouseEnabled(x=False, y=False)
@@ -214,8 +219,6 @@ class FocalDailyPlot:
                                       symbolBrush=DASHBOARD_COLOURS["pulse"], symbolPen=None)
         self._cue_box.addItem(self._audio)
         self._cue_box.addItem(self._pulse)
-        self.plot.legend.addItem(self._audio, "her audio")
-        self.plot.legend.addItem(self._pulse, "her pulses")
         timeline.scene().addItem(self._cue_box)
         self._cue_box.hide()
         self.plot.vb.sigResized.connect(self._sync_cue_box)
@@ -229,7 +232,11 @@ class FocalDailyPlot:
         self._audio.setData(centre, daily["audio"].to_numpy(dtype=float))
         self._pulse.setData(centre, daily["pulse"].to_numpy(dtype=float))
         self._cue_box.enableAutoRange(axis=pg.ViewBox.YAxis)
-        self.plot.setLabel("left", f"km d\u207b\u00b9  ({data.loms[a][-4:]})")
+        tag = data.loms[a][-4:]
+        legend = self.plot.legend
+        for item, label in ((self._bars, "km"), (self._audio, "audio"), (self._pulse, "pulses")):
+            legend.removeItem(item)
+            legend.addItem(item, f"{tag} {label}")
 
     def set_visible(self, visible: bool) -> None:
         self._cue_box.setVisible(visible)
