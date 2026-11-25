@@ -54,6 +54,13 @@ def load_events(connection: sqlite3.Connection) -> pd.DataFrame:
     return events
 
 
+def load_space_weather(connection: sqlite3.Connection) -> pd.DataFrame:
+    """GFZ indices (``davasus-vf-spaceweather``); empty if never fetched."""
+    frame = pd.read_sql_query("SELECT * FROM space_weather ORDER BY timestamp", connection)
+    frame["timestamp"] = pd.to_datetime(frame["timestamp"], utc=True, format="ISO8601")
+    return frame
+
+
 def load_heifers(connection: sqlite3.Connection) -> pd.DataFrame:
     return pd.read_sql_query("SELECT * FROM heifers ORDER BY lom", connection)
 

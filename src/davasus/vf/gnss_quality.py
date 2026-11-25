@@ -21,7 +21,10 @@ import pandas as pd
 
 PROXY_INTERVAL_MIN: int = 30
 MAX_PLAUSIBLE_SPEED_M_PER_MIN: float = 100.0
+# Hp30 >= 6 (NOAA G2 and above): flagged as reduced GPS sensitivity (D20).
 HP30_STORM_THRESHOLD: float = 6.0
+HP30_INTERVAL: pd.Timedelta = pd.Timedelta(minutes=30)
+REDUCED_GPS_LABEL: str = "reduced GPS sensitivity"
 PROXY_STORM_PERCENTILE: float = 95.0
 
 # NOAA-scale storms in the study years; verify every window against Hp30.
@@ -131,3 +134,47 @@ def write_space_weather(connection: sqlite3.Connection, table: pd.DataFrame) -> 
 
 def _gfz_time(value: str) -> str:
     return pd.Timestamp(value, tz="UTC").strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Reduced GPS sensitivity  « Hp30 >= 6, flag then omit »     │
+# └────────────────────────────────────────────────────────────┘
+
+
+def flag_reduced_gps(space_weather: pd.DataFrame) -> pd.Series:
+    """True for Hp30 intervals at or above the storm threshold; NaN is False."""
+    return space_weather["hp30"].ge(HP30_STORM_THRESHOLD).fillna(False).astype(bool)
+
+
+def build_reduced_gps_intervals(space_weather: pd.DataFrame) -> pd.DataFrame:
+    """Merge consecutive flagged half-hours into (start_utc, end_utc, max_hp30) rows."""
+    flagged = space_weather[flag_reduced_gps(space_weather)].sort_values("timestamp")
+    columns = ["start_utc", "end_utc", "max_hp30"]
+    if flagged.empty:
+        return pd.DataFrame(columns=columns)
+    starts = flagged["timestamp"]
+    new_run = starts.diff().ne(HP30_INTERVAL)
+    run = new_run.cumsum()
+    grouped = flagged.groupby(run.to_numpy())
+    return pd.DataFrame({
+        "start_utc": grouped["timestamp"].min().to_numpy(),
+        "end_utc": (grouped["timestamp"].max() + HP30_INTERVAL).to_numpy(),
+        "max_hp30": grouped["hp30"].max().to_numpy(),
+    })[columns]
+
+
+def annotate_reduced_gps(fixes: pd.DataFrame, space_weather: pd.DataFrame) -> pd.DataFrame:
+    """Copy of ``fixes`` with ``is_gps_reduced`` from the Hp30 interval each fix falls in.
+
+    Fixes outside any fetched interval are False; analyses decide whether
+    to drop the flagged rows (run everything, decide later).
+    """
+    table = space_weather.assign(is_gps_reduced=flag_reduced_gps(space_weather))
+    table = table[["timestamp", "is_gps_reduced"]].sort_values("timestamp")
+    order = fixes["timestamp"].argsort(kind="stable")
+    merged = pd.merge_asof(
+        fixes.iloc[order][["timestamp"]].reset_index(), table, on="timestamp",
+        direction="backward", tolerance=HP30_INTERVAL - pd.Timedelta(microseconds=1),
+    ).set_index("index")
+    flag = merged["is_gps_reduced"].astype("boolean").fillna(False).astype(bool)
+    return fixes.assign(is_gps_reduced=flag.reindex(fixes.index).to_numpy())
