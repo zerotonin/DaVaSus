@@ -14,8 +14,10 @@ from enum import IntEnum
 from davasus.constants import (
     WONG_BLACK,
     WONG_BLUE,
+    WONG_GREEN,
     WONG_GREY,
     WONG_ORANGE,
+    WONG_PINK,
     WONG_SKY,
     WONG_VERMILLION,
     WONG_YELLOW,
@@ -69,6 +71,53 @@ PERMUTATIONS: int = 10_000
 FIGURE_SUBDIR: str = "08_vf_leadership"
 
 # ┌────────────────────────────────────────────────────────────┐
+# │ Initiation (Dumont 2005)  « handover 4.3.1, 4.8 »          │
+# └────────────────────────────────────────────────────────────┘
+
+# Herd travel: centroid speed from Sarova et al. (2010), travelling 16 m/min,
+# foraging 5 m/min; 10 m/min separates the two (first check, 24 Nov).
+TRAVEL_SPEED_M_MIN: float = 10.0
+MIN_ANIMALS_FOR_CENTROID: int = 20
+GAP_FILL_MIN: int = 3
+BOUT_MERGE_GAP_MIN: int = 2
+BOUT_MIN_LENGTH_MIN: int = 3
+BOUT_MIN_DISPLACEMENT_M: float = 50.0
+BOUT_PRE_MIN: int = 10
+BOUT_POST_MIN: int = 15
+DEPARTURE_THRESHOLD_M: float = 15.0
+JOIN_FRACTION_OF_HERD: float = 0.5
+GROUP_MOVEMENT_MIN_JOINED: float = 0.5
+MIN_PRESENT_COVERAGE: float = 0.8
+# VF cut-offs are semi-forced, not spontaneous; manual herding is forced.
+ACTIVATION_EXCLUSION_MIN: int = 120
+# Half the 2024 fix interval: departures closer than this count as tied.
+TIE_TOLERANCE_MIN: float = 0.5
+TIE_FRACTION_LIMIT: float = 0.3
+# A first mover at least one fix interval ahead survives any collar lag (< 30 s).
+CLEAR_LEAD_MIN: float = 1.0
+
+# Failed and successful initiation attempts (Sueur 2018; Anzai 2026).
+ATTEMPT_WINDOW_MIN: int = 3
+ATTEMPT_MIN_DISPLACEMENT_M: float = 30.0
+ATTEMPT_MIN_STRAIGHTNESS: float = 0.8
+ATTEMPT_PRE_MIN: int = 5
+ATTEMPT_PRE_MAX_DISPLACEMENT_M: float = 15.0
+ATTEMPT_REFRACTORY_MIN: int = 15
+FOLLOW_SEARCH_MIN: int = 15
+FOLLOW_MIN_DISPLACEMENT_M: float = 30.0
+FOLLOW_MAX_ANGLE_DEG: float = 45.0
+# Chance baseline: the same count 30 to 120 min before or after the attempt.
+CHANCE_SHIFT_MIN: tuple[int, int] = (30, 121)
+
+# Statistics.
+BOOTSTRAP_DRAWS: int = 2_000
+GRADED_NULL_DRAWS: int = 2_000
+PL_PSEUDO_WINS: float = 0.1
+PL_MAX_ITERATIONS: int = 500
+PL_TOLERANCE: float = 1e-8
+RANDOM_SEED: int = 20_241_125
+
+# ┌────────────────────────────────────────────────────────────┐
 # │ Figures and movie  « semantic colours, scales »            │
 # └────────────────────────────────────────────────────────────┘
 
@@ -80,6 +129,10 @@ VF_COLOURS: dict[str, str] = {
     "herd": WONG_GREY,
     "gps_error": WONG_BLACK,
     "manual_herding": WONG_YELLOW,
+    "leader_raw": WONG_BLUE,
+    "leader_lag": WONG_GREEN,
+    "null_egalitarian": WONG_GREY,
+    "null_graded": WONG_PINK,
 }
 TRAJECTORY_CMAP: str = "twilight"
 HEATMAP_CMAP: str = "viridis"
