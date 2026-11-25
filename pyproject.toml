@@ -70,6 +70,7 @@ davasus-vf-figures = "davasus.vf.cli:figures_main"
 davasus-vf-dashboard = "davasus.vf.cli:dashboard_main"
 davasus-vf-spaceweather = "davasus.vf.cli:spaceweather_main"
 davasus-vf-leadership = "davasus.vf.cli:leadership_main"
+davasus-vf-formation = "davasus.vf.cli:formation_main"
 
 [project.urls]
 Repository = "https://github.com/zerotonin/davasus"

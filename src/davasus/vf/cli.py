@@ -367,6 +367,83 @@ def leadership_main(argv: list[str] | None = None) -> int:
     return 0
 
 
+# ┌────────────────────────────────────────────────────────────┐
+# │ Formation  « davasus-vf-formation »                        │
+# └────────────────────────────────────────────────────────────┘
+
+FORMATION_SUBDIR: str = "formation"
+
+
+def build_formation_parser() -> argparse.ArgumentParser:
+    from davasus.vf.constants import BOOTSTRAP_DRAWS, PERMUTATIONS, RANDOM_SEED
+
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-formation",
+        description="Positional leadership: who holds the leading edge of the moving herd.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "figures" / FIGURE_SUBDIR / FORMATION_SUBDIR)
+    p.add_argument("--permutations", type=int, default=PERMUTATIONS)
+    p.add_argument("--bootstrap", type=int, default=BOOTSTRAP_DRAWS)
+    p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def formation_main(argv: list[str] | None = None) -> int:
+    """Run the formation analysis and write tables plus the four-panel figure."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from davasus.vf.formation_analysis import run_formation_analysis
+    from davasus.vf.viz_formation import plot_formation
+    from davasus.viz import save_triplet
+
+    args = build_formation_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    tracks = _load_herd_tracks(args.db)
+    if tracks is None:
+        return 2
+    result = run_formation_analysis(tracks, np.random.default_rng(args.seed),
+                                    args.permutations, args.bootstrap)
+    args.out.mkdir(parents=True, exist_ok=True)
+    for name in ("tests", "headings", "lags"):
+        getattr(result, name).to_csv(args.out / f"{name}.csv", index=False)
+    fig, table = plot_formation(result)
+    written = save_triplet(fig, table, args.out / "formation_leading_edge")
+    plt.close(fig)
+    log.info("wrote %s and tables in %s", written["png"].name, args.out)
+    return 0
+
+
+def _load_herd_tracks(db: Path | None):
+    """Gap-filled herd tracks from heifer_vf.db, or None after logging the reason."""
+    from davasus.vf.dashboard.data import load_dashboard_data
+    from davasus.vf.initiation import build_herd_tracks
+
+    try:
+        db_path, _ = _resolve_db_and_root(db, need_root=False)
+    except LocalPathsError as exc:
+        log.error("%s", exc)
+        return None
+    if not db_path.is_file():
+        log.error("Database not found: %s (run davasus-vf-ingest first)", db_path)
+        return None
+    connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        data = load_dashboard_data(connection)
+    finally:
+        connection.close()
+    if not data.has_space_weather:
+        log.warning("no space weather in the database; reduced-GPS minutes are not excluded "
+                    "(run davasus-vf-spaceweather)")
+    return build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
+                             data.is_gps_reduced)
+
+
 def _configure_logging(verbose: bool) -> None:
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")

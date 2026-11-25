@@ -84,6 +84,7 @@ davasus-vf-figures                # 24 h trajectories, cue timeline, herd movie
 davasus-vf-spaceweather           # GFZ Hp30 / ap30 / Kp for the trial into heifer_vf.db
 davasus-vf-dashboard              # interactive desktop dashboard (needs the gui extra)
 davasus-vf-leadership             # Dumont (2005) first-mover analysis, tables and figure
+davasus-vf-formation              # leading edge of the moving herd (positional leadership)
 ```
 
 **Dashboard.** `pip install -e ".[gui]"` (PySide6, pyqtgraph). The map shows
@@ -119,6 +120,17 @@ and individual initiation attempts with their followers against a
 time-shifted chance baseline. Everything is run twice: on the raw
 departures and with each collar's apparent sampling lag removed, because
 fixes are stamped to the minute.
+
+**Formation (positional leadership).** `davasus-vf-formation` asks which
+heifers hold the leading edge while the herd moves. For every moving minute
+it takes the front and rear arcs of the herd's convex hull (extreme points
+within 45° of the travel direction and its opposite) and scores each heifer
+by (front − rear) / (front + rear). Collar lag shifts a heifer along her own
+path in proportion to speed, so the asymmetry is computed on raw and on
+lag-corrected positions, next to the along-axis offset extrapolated to zero
+herd speed, which lag cannot shift. A front or rear role is called only when
+all three agree. A heading check guards against fixed geographic GPS
+offsets.
 
 ## Repository layout
 
