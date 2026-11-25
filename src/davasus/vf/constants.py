@@ -109,6 +109,16 @@ FOLLOW_MAX_ANGLE_DEG: float = 45.0
 # Chance baseline: the same count 30 to 120 min before or after the attempt.
 CHANCE_SHIFT_MIN: tuple[int, int] = (30, 121)
 
+# Formation (Sarova 2010 positional leadership, herd shape).
+FORMATION_MIN_SPEED_M_MIN: float = 3.0
+ARC_HALF_ANGLE_DEG: float = 45.0
+ARC_DIRECTIONS: int = 19
+# Slow band first: it carries the smallest collar-lag shift and decides roles.
+FORMATION_SPEED_BANDS: dict[str, tuple[float, float]] = {
+    "slow 3-10 m/min": (3.0, 10.0),
+    "travel >= 10 m/min": (10.0, float("inf")),
+}
+
 # Statistics.
 BOOTSTRAP_DRAWS: int = 2_000
 GRADED_NULL_DRAWS: int = 2_000
@@ -133,6 +143,14 @@ VF_COLOURS: dict[str, str] = {
     "leader_lag": WONG_GREEN,
     "null_egalitarian": WONG_GREY,
     "null_graded": WONG_PINK,
+}
+ROLE_COLOURS: dict[str, str] = {
+    "front": WONG_GREEN,
+    "probable front": WONG_SKY,
+    "middle": WONG_GREY,
+    "timing-dependent": WONG_PINK,
+    "probable rear": WONG_ORANGE,
+    "rear": WONG_VERMILLION,
 }
 TRAJECTORY_CMAP: str = "twilight"
 HEATMAP_CMAP: str = "viridis"
