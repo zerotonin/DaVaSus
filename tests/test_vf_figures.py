@@ -141,3 +141,18 @@ def test_loaders_read_ingested_db(tmp_path):
     assert len(load_fixes(con, lom="B", end_utc="2024-08-02")) == 1
     assert load_events(con)["start_utc"].dt.tz is not None
     con.close()
+
+
+def test_cue_landscape_3d_returns_true_counts():
+    from davasus.vf.viz_3d import build_cue_landscape, plot_cue_landscape_3d
+
+    daily = compute_daily_stimulus_summary(_synthetic_fixes())
+    land = build_cue_landscape(daily)
+    assert land.audio.shape == land.pulse.shape == (len(land.loms), len(land.days))
+    assert list(land.audio.sum(axis=1)) == sorted(land.audio.sum(axis=1))
+    for asinh in (False, True):
+        fig, data = plot_cue_landscape_3d(daily, _events(), asinh=asinh)
+        assert len(fig.axes) == 2
+        assert data["pulse"].sum() == daily["pulse"].sum()
+        assert data["audio"].sum() == daily["audio"].sum()
+        matplotlib.pyplot.close(fig)

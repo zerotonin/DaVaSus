@@ -141,6 +141,7 @@ def figures_main(argv: list[str] | None = None) -> int:
     from davasus.vf.load import find_most_stimulated_heifer, load_events, load_fixes
     from davasus.vf.movie import compute_occupancy_frames, render_occupancy_movie, summarise_frames
     from davasus.vf.viz import plot_daily_trajectory, plot_stimulus_timeline
+    from davasus.vf.viz_3d import plot_cue_landscape_3d
     from davasus.viz import save_triplet
 
     args = build_figures_parser().parse_args(argv)
@@ -181,6 +182,12 @@ def figures_main(argv: list[str] | None = None) -> int:
     plt.close(fig)
     daily.to_csv(args.out / "cue_daily_all_heifers.csv", index=False)
     log.info("wrote %s", written["png"])
+
+    for asinh, stem in ((False, "cue_landscape_3d"), (True, "cue_landscape_3d_asinh")):
+        fig, data = plot_cue_landscape_3d(daily, events, asinh=asinh)
+        written = save_triplet(fig, data, args.out / stem)
+        plt.close(fig)
+        log.info("wrote %s", written["png"])
 
     if not args.no_movie:
         frames = compute_occupancy_frames(fixes, projection, args.bin_m, MOVIE_FRAME_HOURS)
