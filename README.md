@@ -100,6 +100,12 @@ downloaded once into `<data_root>/osm_tiles` and reused offline; pass
 `--no-tiles` to skip them. Space-weather indices are from GFZ Potsdam
 (CC BY 4.0) and are cached as JSON under `<data_root>/space_weather`.
 
+**Reduced GPS sensitivity.** Half-hours with GFZ Hp30 ≥ 6 (NOAA G2 or
+stronger) are flagged as reduced GPS sensitivity. Analyses get the flag per
+fix from `davasus.vf.gnss_quality.annotate_reduced_gps` and omit those
+fixes; the dashboard shades them pink in the timeline and shows a banner
+above the map.
+
 ## Repository layout
 
 ```
