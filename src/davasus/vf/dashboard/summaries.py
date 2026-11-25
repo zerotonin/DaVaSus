@@ -20,8 +20,10 @@ from davasus.vf.dashboard.data import (
     MISSING_CODE,
     DashboardData,
     compute_animal_cue_summary,
+    compute_animal_km_today,
     compute_herd_snapshot,
 )
+from davasus.vf.gnss_quality import HP30_STORM_THRESHOLD
 
 Rows = list[tuple[str, str]]
 DASH: str = "–"
@@ -37,6 +39,7 @@ def describe_time(data: DashboardData, i: int) -> Rows:
         ("trial day", f"{day} of {(data.minutes[-1].floor('D') - data.minutes[0].floor('D')).days + 1}"),
         ("fixes / plausible", f"{herd.n_fixes} / {herd.n_plausible} of {data.n_animals}"),
         ("mean distance to centroid", _num(herd.mean_distance_m, "m", 1)),
+        ("GPS sensitivity", describe_gps_sensitivity(data, i)),
     ]
 
 
@@ -86,7 +89,7 @@ def describe_space_weather(data: DashboardData, i: int) -> Rows:
         ("Hp30", _num(s["hp30"], "", 2)),
         ("ap30", _num(s["ap30"], "nT", 0)),
         ("Kp", _num(s["kp"], "", 2)),
-        ("storm (Hp30 ≥ 6)", "yes" if s["hp30"] >= 6 else "no"),
+        ("GPS sensitivity", describe_gps_sensitivity(data, i)),
         ("source", "GFZ Potsdam, CC BY 4.0"),
     ]
 
@@ -111,7 +114,8 @@ def describe_heifer(data: DashboardData, i: int, a: int) -> Rows:
         ("fence distance min / max", f"{_num(data.fence_dist_min[i, a], '', 1)} / "
                                      f"{_num(data.fence_dist_max[i, a], 'm', 1)}"),
         ("IMU ticks > 40 mg", _num(data.imu_40mg[i, a], "", 0)),
-        ("odometer", _num(data.odometer_km[i, a], "km", 2)),
+        ("odometer (collar)", _num(data.odometer_km[i, a], "km", 2)),
+        ("distance today", _num(compute_animal_km_today(data, i, a), "km", 2)),
         ("audio / pulses today", f"{cues.audio_day:.0f} / {cues.pulse_day:.0f}"),
         ("SR today", _num(cues.sr_day, "", 3)),
         ("audio / pulses so far", f"{cues.audio_total:.0f} / {cues.pulse_total:.0f}"),
@@ -135,6 +139,14 @@ def build_herd_table(data: DashboardData, i: int) -> list[list[object]]:
             cues.audio_day, cues.pulse_day, _round(cues.sr_day, 3),
         ])
     return rows
+
+
+def describe_gps_sensitivity(data: DashboardData, i: int) -> str:
+    if not data.has_space_weather:
+        return "unknown (no space weather)"
+    if data.is_gps_reduced[i]:
+        return f"REDUCED (Hp30 \u2265 {HP30_STORM_THRESHOLD:g}); omit from analyses"
+    return "normal"
 
 
 def describe_outside_code(code: int) -> str:

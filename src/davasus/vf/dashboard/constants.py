@@ -77,6 +77,7 @@ TRAIL_COLOUR: str = WONG_GREY
 FOOTPRINT_COLOUR: str = WONG_GREY
 CURSOR_COLOUR: str = WONG_VERMILLION
 MANUAL_HERDING_COLOUR: str = WONG_YELLOW
+REDUCED_GPS_COLOUR: str = WONG_PINK
 
 DASHBOARD_COLOURS: dict[str, str] = {
     "air_temp": WONG_ORANGE,
@@ -89,4 +90,9 @@ DASHBOARD_COLOURS: dict[str, str] = {
     "pulse": WONG_VERMILLION,
     "plausible": WONG_GREEN,
     "focal": WONG_BLUE,
+    "herd_km": WONG_GREY,
 }
+
+TIMELINE_ROW_SPACE_WEATHER: str = "space weather"
+TIMELINE_ROW_FOCAL_DAILY: str = "selected heifer: km and cues per day"
+TIMELINE_ROW_MODES: tuple[str, ...] = (TIMELINE_ROW_FOCAL_DAILY, TIMELINE_ROW_SPACE_WEATHER)

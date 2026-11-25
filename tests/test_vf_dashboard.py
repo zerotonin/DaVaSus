@@ -9,9 +9,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from davasus.vf.dashboard.constants import TIMELINE_ROW_MODES
 from davasus.vf.dashboard.data import (
     MISSING_CODE,
     compute_animal_cue_summary,
+    compute_animal_daily_series,
+    compute_animal_km_today,
+    compute_flag_runs,
+    compute_herd_daily_km,
     compute_herd_snapshot,
     compute_hourly_series,
     compute_trails,
@@ -33,7 +38,10 @@ from davasus.vf.dashboard.tiles import (
     compute_tile_xy,
 )
 from davasus.vf.gnss_quality import (
+    annotate_reduced_gps,
+    build_reduced_gps_intervals,
     build_space_weather_table,
+    flag_reduced_gps,
     parse_gfz_json,
     write_space_weather,
 )
@@ -101,6 +109,26 @@ def test_hourly_series_has_all_panels(data):
     for column in ("audio", "pulse", "plausible_share", "thi_nrc", "hp30", "kp"):
         assert column in hourly
     assert hourly["plausible_share"].iloc[0] == pytest.approx(1.0)
+
+
+def test_daily_series_sums_odometer_increments(data):
+    data.odometer_new[:, 0] = [0.0, 0.5, 0.25, 0.25]
+    daily = compute_animal_daily_series(data, 0)
+    assert len(daily) == 1
+    assert daily["km"].iloc[0] == pytest.approx(1.0)
+    assert daily["fixes"].iloc[0] == 4
+    assert compute_herd_daily_km(data)["median"].iloc[0] >= 0
+
+
+def test_daily_series_blank_without_fixes(data):
+    data.outside[:, 1] = MISSING_CODE
+    daily = compute_animal_daily_series(data, 1)
+    assert daily[["km", "audio", "pulse"]].isna().all().all()
+
+
+def test_km_today_uses_cumulative_odometer(data):
+    expected = float(data.odometer_new[:3, 0].sum())
+    assert compute_animal_km_today(data, 2, 0) == pytest.approx(expected)
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -176,7 +204,31 @@ def test_space_weather_reaches_the_panel(vf_db):
     assert data.has_space_weather
     rows = dict(describe_space_weather(data, 2))
     assert rows["Hp30"] == "6.33"
-    assert rows["storm (Hp30 ≥ 6)"] == "yes"
+    assert rows["GPS sensitivity"].startswith("REDUCED")
+    assert data.is_gps_reduced.all()  # all four minutes fall in the 10:00 half-hour
+
+
+def test_reduced_gps_flag_and_intervals():
+    table = _space_table()
+    assert flag_reduced_gps(table).tolist() == [False, False, True, False]
+    intervals = build_reduced_gps_intervals(table)
+    assert len(intervals) == 1
+    assert intervals.loc[0, "start_utc"] == pd.Timestamp("2024-08-02 10:00", tz="UTC")
+    assert intervals.loc[0, "end_utc"] == pd.Timestamp("2024-08-02 10:30", tz="UTC")
+
+
+def test_annotate_reduced_gps_uses_the_half_hour_a_fix_falls_in():
+    stamps = pd.to_datetime(["2024-08-02 09:59", "2024-08-02 10:00", "2024-08-02 10:29",
+                             "2024-08-02 10:30", "2024-08-03 10:00"], utc=True)
+    fixes = pd.DataFrame({"timestamp": stamps[::-1]}, index=[10, 11, 12, 13, 14])
+    flags = annotate_reduced_gps(fixes, _space_table())["is_gps_reduced"]
+    assert flags.tolist() == [False, False, True, True, False]
+
+
+def test_flag_runs():
+    minutes = pd.date_range("2024-08-02", periods=6, freq="min", tz="UTC")
+    runs = compute_flag_runs(np.array([0, 1, 1, 0, 0, 1], dtype=bool), minutes)
+    assert runs == [(minutes[1], minutes[3]), (minutes[5], minutes[5] + pd.Timedelta("1min"))]
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -200,6 +252,10 @@ def test_window_builds_and_scrubs(data, tmp_path, monkeypatch):
     window.labels_box.setChecked(True)
     window.follow_box.setChecked(True)
     window._jump_to_cue(1)
+    for mode in TIMELINE_ROW_MODES:
+        window.row_mode_box.setCurrentText(mode)
+        app.processEvents()
+        assert window.timeline._row_mode == mode
     app.processEvents()
     assert window.minute == 2
     assert window.selected == 1

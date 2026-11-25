@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDateTimeEdit,
     QDockWidget,
+    QHBoxLayout,
     QLabel,
     QMainWindow,
     QScrollArea,
@@ -35,10 +36,13 @@ from PySide6.QtWidgets import (
 from davasus.vf.dashboard.constants import (
     DEFAULT_PLAY_SPEED_INDEX,
     DEFAULT_TRAIL_INDEX,
+    MANUAL_HERDING_COLOUR,
     PLAY_INTERVAL_MS,
     PLAY_SPEEDS_MIN_PER_TICK,
+    REDUCED_GPS_COLOUR,
     TILE_ATTRIBUTION,
     TIMELINE_BIN,
+    TIMELINE_ROW_MODES,
     TRAIL_MINUTES_CHOICES,
 )
 from davasus.vf.dashboard.data import DashboardData, compute_hourly_series
@@ -54,12 +58,14 @@ from davasus.vf.dashboard.summaries import (
     describe_weather,
 )
 from davasus.vf.dashboard.tiles import TileCache
+from davasus.vf.gnss_quality import HP30_STORM_THRESHOLD
 
 SETTINGS_ORG: str = "DaVaSus"
 SETTINGS_APP: str = "vf-dashboard"
 LAYOUT_VERSION: int = 1
 LARGE_STEP_MIN: int = 60
 SIDE_DOCK_WIDTH_PX: int = 380
+ROW_MODE_KEY: str = "timeline_row_mode"
 
 
 class DashboardWindow(QMainWindow):
@@ -112,6 +118,7 @@ class DashboardWindow(QMainWindow):
         self.herd_table.set_rows(build_herd_table(data, i))
         stamp = data.minutes[i]
         self.timeline.set_cursor(stamp.timestamp())
+        self.gps_banner.setVisible(bool(data.is_gps_reduced[i]))
         for widget, setter in ((self.slider, self.slider.setValue),
                                (self.clock, lambda _: self.clock.setDateTime(_to_qt(stamp)))):
             widget.blockSignals(True)
@@ -252,6 +259,13 @@ class DashboardWindow(QMainWindow):
         holder = QWidget()
         layout = QVBoxLayout(holder)
         layout.setContentsMargins(0, 0, 0, 0)
+        self.gps_banner = QLabel(
+            f"Reduced GPS sensitivity: Hp30 \u2265 {HP30_STORM_THRESHOLD:g} "
+            "(geomagnetic storm). Positions are flagged and omitted from analyses.")
+        self.gps_banner.setStyleSheet(
+            f"background: {REDUCED_GPS_COLOUR}; color: black; padding: 4px; font-weight: bold;")
+        self.gps_banner.setVisible(False)
+        layout.addWidget(self.gps_banner)
         layout.addWidget(self.map)
         note = "map " + (TILE_ATTRIBUTION if has_tiles else "tiles off") + \
             "  ·  click a heifer to select it, drag to pan, wheel to zoom"
@@ -272,7 +286,7 @@ class DashboardWindow(QMainWindow):
         space = self._add_dock("Space weather", self.space_panel, right, menu)
         self.tabifyDockWidget(weather, space)
         weather.raise_()
-        self._add_dock("Timeline", self.timeline, bottom, menu, scroll=False)
+        self._add_dock("Timeline", self._wrap_timeline(), bottom, menu, scroll=False)
         self.resizeDocks([time_dock, self.heifer_dock], [SIDE_DOCK_WIDTH_PX] * 2,
                          Qt.Orientation.Horizontal)
         self.resizeDocks([time_dock, herd_dock], [220, 600], Qt.Orientation.Vertical)
@@ -280,6 +294,27 @@ class DashboardWindow(QMainWindow):
         reset = menu.addAction("Reset layout")
         reset.triggered.connect(self._reset_layout)
         self._default_state = self.saveState(LAYOUT_VERSION)
+
+    def _wrap_timeline(self) -> QWidget:
+        holder = QWidget()
+        layout = QVBoxLayout(holder)
+        layout.setContentsMargins(0, 0, 0, 0)
+        row = QHBoxLayout()
+        row.addWidget(QLabel(" second row:"))
+        self.row_mode_box = QComboBox()
+        self.row_mode_box.addItems(list(TIMELINE_ROW_MODES))
+        self.row_mode_box.currentTextChanged.connect(self.timeline.set_row_mode)
+        row.addWidget(self.row_mode_box)
+        row.addStretch(1)
+        key = QLabel(
+            f"<span style='background:{REDUCED_GPS_COLOUR}'>&nbsp;&nbsp;&nbsp;&nbsp;</span> "
+            f"reduced GPS sensitivity (Hp30 \u2265 {HP30_STORM_THRESHOLD:g}) &nbsp;&nbsp; "
+            f"<span style='background:{MANUAL_HERDING_COLOUR}'>&nbsp;&nbsp;&nbsp;&nbsp;</span> "
+            "manual herding &nbsp;&nbsp; dashed: parcel activation ")
+        row.addWidget(key)
+        layout.addLayout(row)
+        layout.addWidget(self.timeline)
+        return holder
 
     def _add_dock(self, title: str, widget: QWidget, area: Qt.DockWidgetArea, menu,
                   name: str | None = None, scroll: bool = True) -> QDockWidget:
@@ -306,6 +341,11 @@ class DashboardWindow(QMainWindow):
             self.resize(1600, 1000)
         if state is not None:
             self.restoreState(state, LAYOUT_VERSION)
+        mode = settings.value(ROW_MODE_KEY, TIMELINE_ROW_MODES[0])
+        if mode not in TIMELINE_ROW_MODES:
+            mode = TIMELINE_ROW_MODES[0]
+        self.row_mode_box.setCurrentText(mode)
+        self.timeline.set_row_mode(mode)
 
     def _reset_layout(self) -> None:
         self.restoreState(self._default_state, LAYOUT_VERSION)
@@ -314,6 +354,7 @@ class DashboardWindow(QMainWindow):
         settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("state", self.saveState(LAYOUT_VERSION))
+        settings.setValue(ROW_MODE_KEY, self.row_mode_box.currentText())
         super().closeEvent(event)
 
 

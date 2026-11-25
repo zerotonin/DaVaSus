@@ -18,13 +18,14 @@ import pandas as pd
 
 from davasus.thi import compute_thi_nrc
 from davasus.vf.geometry import LocalProjection, is_plausible_fix
+from davasus.vf.gnss_quality import HP30_STORM_THRESHOLD
 from davasus.vf.learning import compute_success_ratio
 from davasus.vf.load import load_events, load_heifers
 
 FIX_COLUMNS: tuple[str, ...] = (
     "neckband_id", "lom", "timestamp", "gnss_lat", "gnss_lon", "outside",
     "audio_stim_new", "pulse_stim_new", "fence_dist_min", "fence_dist_max",
-    "imu_tick_40mg", "odometer_km",
+    "imu_tick_40mg", "odometer_km", "odometer_km_new",
 )
 WEATHER_COLUMNS: tuple[str, ...] = (
     "air_temp_avg", "rel_humid_avg", "rain_mm_tot", "bp_mbar_avg",
@@ -64,11 +65,14 @@ class DashboardData:
     fence_dist_max: np.ndarray
     imu_40mg: np.ndarray
     odometer_km: np.ndarray
+    odometer_new: np.ndarray
+    odometer_cum: np.ndarray
     audio_cum: np.ndarray
     pulse_cum: np.ndarray
     weather: pd.DataFrame
     space_weather: pd.DataFrame
     event_index: np.ndarray
+    is_gps_reduced: np.ndarray
 
     @property
     def n_minutes(self) -> int:
@@ -103,6 +107,7 @@ def load_dashboard_data(connection: sqlite3.Connection) -> DashboardData:
         fixes.drop_duplicates("lom").set_index("lom").loc[list(loms), "neckband_id"].astype(str)
     )
     cubes = build_fix_cubes(fixes, minutes, loms, projection)
+    space_weather = build_space_weather_frame(_read_table(connection, "space_weather"), minutes)
     return DashboardData(
         minutes=minutes,
         loms=loms,
@@ -111,8 +116,9 @@ def load_dashboard_data(connection: sqlite3.Connection) -> DashboardData:
         events=events,
         projection=projection,
         weather=build_weather_frame(_read_table(connection, "vf_weather"), minutes),
-        space_weather=build_space_weather_frame(_read_table(connection, "space_weather"), minutes),
+        space_weather=space_weather,
         event_index=build_event_index(events, minutes),
+        is_gps_reduced=space_weather["hp30"].ge(HP30_STORM_THRESHOLD).to_numpy(),
         **cubes,
     )
 
@@ -167,6 +173,7 @@ def build_fix_cubes(
 
     audio = scatter(np.nan_to_num(numeric("audio_stim_new")), 0.0, np.float32)
     pulse = scatter(np.nan_to_num(numeric("pulse_stim_new")), 0.0, np.float32)
+    odometer_new = scatter(np.nan_to_num(numeric("odometer_km_new")), 0.0, np.float32)
     outside = fixes["outside"].to_numpy(dtype=float, na_value=MISSING_CODE)
     return {
         "x_m": scatter(np.where(ok, x, np.nan), np.nan, np.float32),
@@ -180,6 +187,8 @@ def build_fix_cubes(
         "fence_dist_max": scatter(numeric("fence_dist_max"), np.nan, np.float32),
         "imu_40mg": scatter(numeric("imu_tick_40mg"), np.nan, np.float32),
         "odometer_km": scatter(numeric("odometer_km"), np.nan, np.float32),
+        "odometer_new": odometer_new,
+        "odometer_cum": np.cumsum(odometer_new, axis=0, dtype=np.float64),
         "audio_cum": np.cumsum(audio, axis=0, dtype=np.float64),
         "pulse_cum": np.cumsum(pulse, axis=0, dtype=np.float64),
     }
@@ -272,6 +281,13 @@ def compute_animal_cue_summary(data: DashboardData, i: int, a: int) -> AnimalCue
     )
 
 
+def compute_animal_km_today(data: DashboardData, i: int, a: int) -> float:
+    """Collar odometer distance since UTC midnight, up to minute ``i``."""
+    day_start = data.minute_of(data.minutes[i].floor("D"))
+    before = data.odometer_cum[day_start - 1, a] if day_start > 0 else 0.0
+    return float(data.odometer_cum[i, a] - before)
+
+
 def compute_trails(data: DashboardData, i: int, length: int) -> tuple[np.ndarray, np.ndarray]:
     """All animals' last ``length`` minutes as one NaN-separated polyline."""
     if length <= 0:
@@ -330,3 +346,49 @@ def compute_animal_hourly_cues(data: DashboardData, a: int, bin_rule: str) -> pd
     return pd.DataFrame(
         {"audio": data.audio[:, a], "pulse": data.pulse[:, a]}, index=data.minutes
     ).resample(bin_rule).sum()
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Daily series  « focal heifer against the herd »            │
+# └────────────────────────────────────────────────────────────┘
+
+
+def compute_animal_daily_series(data: DashboardData, a: int) -> pd.DataFrame:
+    """Per UTC day: collar odometer km, audio cues, pulses and fix count.
+
+    Distance sums ``odometer_km_new`` (km per fix), so the collar's daily
+    odometer reset does not matter. First and last trial days are partial;
+    days without a single fix are NaN, not zero.
+    """
+    frame = pd.DataFrame({
+        "km": data.odometer_new[:, a],
+        "audio": data.audio[:, a],
+        "pulse": data.pulse[:, a],
+        "fixes": (data.outside[:, a] >= 0).astype(np.int32),
+    }, index=data.minutes)
+    daily = frame.resample("D").sum()
+    no_fix = daily["fixes"] == 0
+    daily.loc[no_fix, ["km", "audio", "pulse"]] = np.nan
+    return daily
+
+
+def compute_herd_daily_km(data: DashboardData) -> pd.DataFrame:
+    """Median and IQR of daily odometer km across animals."""
+    has_fix = pd.DataFrame(data.outside >= 0, index=data.minutes).resample("D").sum() > 0
+    daily = pd.DataFrame(data.odometer_new, index=data.minutes).resample("D").sum()
+    daily = daily.where(has_fix)
+    return pd.DataFrame({
+        "q25": daily.quantile(0.25, axis=1),
+        "median": daily.median(axis=1),
+        "q75": daily.quantile(0.75, axis=1),
+    })
+
+
+def compute_flag_runs(
+    flags: np.ndarray, minutes: pd.DatetimeIndex
+) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+    """(start, end) of each run of True minutes; end is exclusive."""
+    padded = np.concatenate([[False], flags.astype(bool), [False]])
+    edges = np.flatnonzero(np.diff(padded.astype(np.int8)))
+    step = pd.Timedelta(minutes=1)
+    return [(minutes[s], minutes[e - 1] + step) for s, e in zip(edges[::2], edges[1::2], strict=True)]
