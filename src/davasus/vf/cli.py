@@ -298,6 +298,75 @@ def spaceweather_main(argv: list[str] | None = None) -> int:
     return 0
 
 
+# ┌────────────────────────────────────────────────────────────┐
+# │ Leadership  « davasus-vf-leadership »                      │
+# └────────────────────────────────────────────────────────────┘
+
+LEADERSHIP_SUBDIR: str = "dumont"
+
+
+def build_leadership_parser() -> argparse.ArgumentParser:
+    from davasus.vf.constants import BOOTSTRAP_DRAWS, PERMUTATIONS, RANDOM_SEED
+
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-leadership",
+        description="Dumont (2005) leadership: first movers of spontaneous group movements.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "figures" / FIGURE_SUBDIR / LEADERSHIP_SUBDIR)
+    p.add_argument("--permutations", type=int, default=PERMUTATIONS)
+    p.add_argument("--bootstrap", type=int, default=BOOTSTRAP_DRAWS)
+    p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def leadership_main(argv: list[str] | None = None) -> int:
+    """Run the Dumont analysis and write tables plus the six-panel figure."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from davasus.vf.dashboard.data import load_dashboard_data
+    from davasus.vf.dumont import run_dumont_analysis
+    from davasus.vf.initiation import build_herd_tracks
+    from davasus.vf.viz_leadership import plot_dumont_leadership
+    from davasus.viz import save_triplet
+
+    args = build_leadership_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    try:
+        db_path, _ = _resolve_db_and_root(args.db, need_root=False)
+    except LocalPathsError as exc:
+        log.error("%s", exc)
+        return 2
+    if not db_path.is_file():
+        log.error("Database not found: %s (run davasus-vf-ingest first)", db_path)
+        return 2
+    connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        data = load_dashboard_data(connection)
+    finally:
+        connection.close()
+    if not data.has_space_weather:
+        log.warning("no space weather in the database; reduced-GPS minutes are not excluded "
+                    "(run davasus-vf-spaceweather)")
+    tracks = build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
+                               data.is_gps_reduced)
+    result = run_dumont_analysis(tracks, np.random.default_rng(args.seed),
+                                 args.permutations, args.bootstrap)
+    args.out.mkdir(parents=True, exist_ok=True)
+    for name in ("bouts", "per_bout", "lags", "nulls", "order_w", "attempts", "attempt_tests"):
+        getattr(result, name).to_csv(args.out / f"{name}.csv", index=False)
+    fig, table = plot_dumont_leadership(result)
+    written = save_triplet(fig, table, args.out / "dumont_leadership")
+    plt.close(fig)
+    log.info("wrote %s and tables in %s", written["png"].name, args.out)
+    return 0
+
+
 def _configure_logging(verbose: bool) -> None:
     logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")

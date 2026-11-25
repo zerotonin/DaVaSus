@@ -83,6 +83,7 @@ at analysis time.
 davasus-vf-figures                # 24 h trajectories, cue timeline, herd movie
 davasus-vf-spaceweather           # GFZ Hp30 / ap30 / Kp for the trial into heifer_vf.db
 davasus-vf-dashboard              # interactive desktop dashboard (needs the gui extra)
+davasus-vf-leadership             # Dumont (2005) first-mover analysis, tables and figure
 ```
 
 **Dashboard.** `pip install -e ".[gui]"` (PySide6, pyqtgraph). The map shows
@@ -105,6 +106,19 @@ stronger) are flagged as reduced GPS sensitivity. Analyses get the flag per
 fix from `davasus.vf.gnss_quality.annotate_reduced_gps` and omit those
 fixes; the dashboard shades them pink in the timeline and shows a banner
 above the map.
+
+**Leadership (Dumont 2005).** `davasus-vf-leadership` finds spontaneous
+group movements (herd centroid at 10 m/min or faster for at least 3 min and
+50 m, outside the two hours after a parcel activation and outside reduced
+GPS periods), times each heifer's departure along the travel direction, and
+credits the first mover (ties within 0.5 min split). It reports first-mover
+shares with day-block bootstrap CIs, an egalitarian null (labels shuffled
+within days) and a graded null (geometric worths), Plackett-Luce worths for
+first places and full departure orders, Kendall's W for the whole order,
+and individual initiation attempts with their followers against a
+time-shifted chance baseline. Everything is run twice: on the raw
+departures and with each collar's apparent sampling lag removed, because
+fixes are stamped to the minute.
 
 ## Repository layout
 
