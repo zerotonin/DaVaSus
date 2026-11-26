@@ -142,6 +142,64 @@ FACT_TABLES: tuple[tuple[str, str], ...] = (
     ),
 )
 
+# ┌────────────────────────────────────────────────────────────┐
+# │ Geometry tables  « parcels, paddocks, which is open »      │
+# └────────────────────────────────────────────────────────────┘
+
+GEOMETRY_TABLES: tuple[tuple[str, str], ...] = (
+    (
+        "parcel_outlines",
+        """
+        CREATE TABLE IF NOT EXISTS parcel_outlines (
+            label       TEXT    NOT NULL,
+            vertex      INTEGER NOT NULL,
+            lat         REAL    NOT NULL,
+            lon         REAL    NOT NULL,
+            is_vf_edge  INTEGER NOT NULL,
+            PRIMARY KEY (label, vertex)
+        )
+        """,
+    ),
+    (
+        "paddocks",
+        """
+        CREATE TABLE IF NOT EXISTS paddocks (
+            paddock   TEXT    NOT NULL,
+            parzelle  INTEGER NOT NULL,
+            ring      INTEGER NOT NULL,
+            vertex    INTEGER NOT NULL,
+            lat       REAL    NOT NULL,
+            lon       REAL    NOT NULL,
+            PRIMARY KEY (paddock, ring, vertex)
+        )
+        """,
+    ),
+    (
+        "tree_patches",
+        """
+        CREATE TABLE IF NOT EXISTS tree_patches (
+            patch   TEXT    NOT NULL,
+            ring    INTEGER NOT NULL,
+            vertex  INTEGER NOT NULL,
+            lat     REAL    NOT NULL,
+            lon     REAL    NOT NULL,
+            PRIMARY KEY (patch, ring, vertex)
+        )
+        """,
+    ),
+    (
+        "parcel_paddocks",
+        """
+        CREATE TABLE IF NOT EXISTS parcel_paddocks (
+            label    TEXT NOT NULL,
+            paddock  TEXT NOT NULL,
+            share    REAL NOT NULL,
+            PRIMARY KEY (label, paddock)
+        )
+        """,
+    ),
+)
+
 # The primary key (neckband_id, timestamp) on a WITHOUT ROWID table is the
 # clustered index for per-collar time series. Secondary indices cover the
 # other access paths:
@@ -164,7 +222,7 @@ class VFSchema:
         self.connection = connection
 
     def create_all(self) -> None:
-        for _, ddl in (*DIM_TABLES, *FACT_TABLES):
+        for _, ddl in (*DIM_TABLES, *FACT_TABLES, *GEOMETRY_TABLES):
             self.connection.execute(ddl)
         self.connection.commit()
 

@@ -61,6 +61,26 @@ def load_space_weather(connection: sqlite3.Connection) -> pd.DataFrame:
     return frame
 
 
+def load_parcel_geometry(connection: sqlite3.Connection) -> dict[str, pd.DataFrame]:
+    """Parcel outlines, paddocks, open paddocks and tree patches (``davasus-vf-paddocks``).
+
+    Empty frames when the tables are missing or were never filled.
+    """
+    queries = {
+        "parcel_outlines": "SELECT * FROM parcel_outlines ORDER BY label, vertex",
+        "paddocks": "SELECT * FROM paddocks ORDER BY parzelle, ring, vertex",
+        "parcel_paddocks": "SELECT * FROM parcel_paddocks ORDER BY label, paddock",
+        "tree_patches": "SELECT * FROM tree_patches ORDER BY patch, ring, vertex",
+    }
+    frames = {}
+    for name, sql in queries.items():
+        try:
+            frames[name] = pd.read_sql_query(sql, connection)
+        except pd.errors.DatabaseError:
+            frames[name] = pd.DataFrame()
+    return frames
+
+
 def load_heifers(connection: sqlite3.Connection) -> pd.DataFrame:
     return pd.read_sql_query("SELECT * FROM heifers ORDER BY lom", connection)
 
