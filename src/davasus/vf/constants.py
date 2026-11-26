@@ -119,6 +119,25 @@ FORMATION_SPEED_BANDS: dict[str, tuple[float, float]] = {
     "travel >= 10 m/min": (10.0, float("inf")),
 }
 
+# GPS noise floor: heifers with at most 20 IMU ticks (> 40 mg) per minute for
+# 15 min or more; 2024 values in the comments (63 000 still minutes).
+GPS_STILL_IMU_MAX: int = 20
+GPS_STILL_MIN_RUN_MIN: int = 15
+# Median apparent displacement of a still heifer over 1 to 30 min (2.3-3.5 m).
+MOVE_NOISE_M: float = 3.5
+# 95 % of still-heifer displacements (10-12 m): above this a heifer has moved.
+MOVE_MIN_M: float = 12.0
+
+# Pull and anchor events (Strandburg-Peshkin et al. 2015).
+# Each swing must clear 99 % of the pair-distance range of two still heifers
+# within 20 min (20.1 m; 15.3 m at 95 %) with a margin.
+PULL_SWING_M: float = 22.0
+PULL_SWING_SENSITIVITY_M: tuple[float, ...] = (15.0, 30.0)
+PULL_DISTANCE_SMOOTHING_MIN: int = 3
+PULL_MIN_RUN_MIN: int = 10
+PULL_MAX_PHASE_MIN: int = 60
+PULL_MIN_STRENGTH: float = 0.1
+
 # Statistics.
 BOOTSTRAP_DRAWS: int = 2_000
 GRADED_NULL_DRAWS: int = 2_000
