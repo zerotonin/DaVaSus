@@ -23,5 +23,7 @@ dependencies:
   - prettytable
   - pyside6
   - pyqtgraph
+  - pyshp
+  - shapely
   - pip:
       - -e ".[analysis,stats,gui,dev]"

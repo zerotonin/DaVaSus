@@ -86,6 +86,7 @@ davasus-vf-dashboard              # interactive desktop dashboard (needs the gui
 davasus-vf-leadership             # Dumont (2005) first-mover analysis, tables and figure
 davasus-vf-formation              # leading edge of the moving herd (positional leadership)
 davasus-vf-pull-anchor            # who pulls whom: pair separation-reunion events
+davasus-vf-paddocks               # parcel outlines and paddocks A-F into heifer_vf.db
 ```
 
 **Dashboard.** `pip install -e ".[gui]"` (PySide6, pyqtgraph). The map shows
@@ -145,6 +146,18 @@ general mobility; it is tested against random pull directions, run on raw
 and lag-corrected positions, and at 15 and 30 m. A heifer is called leader or
 follower when her lead-share CI excludes 0.5 on the same side in both
 scenarios.
+
+**Paddocks and parcels.** A *paddock* is one of the six fixed sub-areas
+of the pasture (Parzelle 1-6, map letters A-F); a *parcel* is one eShepherd
+virtual-fence layout, i.e. the paddocks open at one time (e.g. `heifers 3_4`
+= C + D). `davasus-vf-paddocks` reads the parcel shapefiles from
+`<data_root>/Parzellen_Tränke/Parzellen` (vertices in `id` order; `VF = j` on
+vertex k marks the virtual-fence edge k -> j), cuts the paddocks out of
+overlapping parcels and writes `parcel_outlines`, `paddocks` and
+`parcel_paddocks` into `heifer_vf.db`, plus the surveyed tree patches
+(`tree_patches`, from the polygon layers of `Luxuswiesen_Wald.gpkg`; the
+areas behind `in_shadow`). The dashboard draws the paddocks faintly, the
+trees filled, and highlights the active parcel.
 
 ## Repository layout
 

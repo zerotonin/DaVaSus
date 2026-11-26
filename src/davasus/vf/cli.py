@@ -490,6 +490,56 @@ def load_leadership_comparison(leadership_dir: Path) -> pd.DataFrame | None:
             .merge(dumont[["lom", "share"]].rename(columns={"share": "dumont_share"}), on="lom", how="outer"))
 
 
+# ┌────────────────────────────────────────────────────────────┐
+# │ Paddocks  « davasus-vf-paddocks »                          │
+# └────────────────────────────────────────────────────────────┘
+
+
+def build_paddocks_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-paddocks",
+        description="Parcel outlines and paddocks A-F (Parzelle 1-6) from the eShepherd shapefiles "
+                    "into heifer_vf.db.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--source", type=Path,
+                   help="folder with the parcel .shp files (default: <data_root>/Parzellen_Tränke/Parzellen)")
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def paddocks_main(argv: list[str] | None = None) -> int:
+    """Derive the paddocks and replace the geometry tables; returns the exit code."""
+    from davasus.vf.constants import PARCEL_SHAPE_SUBDIR
+    from davasus.vf.paddocks import build_paddock_tables, summarise_paddocks, write_paddock_tables
+    from davasus.vf.schema import VFSchema
+
+    args = build_paddocks_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    try:
+        db_path, data_root = _resolve_db_and_root(args.db, need_root=args.source is None)
+    except LocalPathsError as exc:
+        log.error("%s", exc)
+        return 2
+    source = args.source or data_root / PARCEL_SHAPE_SUBDIR
+    if not db_path.is_file():
+        log.error("Database not found: %s (run davasus-vf-ingest first)", db_path)
+        return 2
+    if not source.is_dir():
+        log.error("Parcel shapefiles not found: %s (unpack Parzellen_Traenke.zip into data_root)", source)
+        return 2
+    tables = build_paddock_tables(source)
+    connection = sqlite3.connect(db_path)
+    try:
+        VFSchema(connection).create_all()
+        write_paddock_tables(connection, tables)
+    finally:
+        connection.close()
+    log.info("parcels: %d, paddocks:\n%s", tables["parcel_outlines"]["label"].nunique(),
+             summarise_paddocks(tables).to_string(index=False))
+    return 0
+
+
 def _load_herd_tracks(db: Path | None):
     """Gap-filled herd tracks from heifer_vf.db, or None after logging the reason."""
     from davasus.vf.initiation import build_herd_tracks
