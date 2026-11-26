@@ -419,10 +419,91 @@ def formation_main(argv: list[str] | None = None) -> int:
     return 0
 
 
+# ┌────────────────────────────────────────────────────────────┐
+# │ Pull and anchor  « davasus-vf-pull-anchor »                │
+# └────────────────────────────────────────────────────────────┘
+
+PULL_ANCHOR_SUBDIR: str = "pull_anchor"
+
+
+def build_pull_anchor_parser() -> argparse.ArgumentParser:
+    from davasus.vf.constants import BOOTSTRAP_DRAWS, PERMUTATIONS, RANDOM_SEED
+
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-pull-anchor",
+        description="Who pulls whom: separation-reunion events between pairs (Strandburg-Peshkin 2015).",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "figures" / FIGURE_SUBDIR / PULL_ANCHOR_SUBDIR)
+    p.add_argument("--permutations", type=int, default=PERMUTATIONS)
+    p.add_argument("--bootstrap", type=int, default=BOOTSTRAP_DRAWS)
+    p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def pull_anchor_main(argv: list[str] | None = None) -> int:
+    """Run the pull/anchor analysis and write tables plus the six-panel figure."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from davasus.vf.initiation import build_herd_tracks
+    from davasus.vf.pull_anchor_analysis import run_pull_anchor_analysis
+    from davasus.vf.viz_pull_anchor import plot_pull_anchor
+    from davasus.viz import save_triplet
+
+    args = build_pull_anchor_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    data = _load_dashboard(args.db)
+    if data is None:
+        return 2
+    tracks = build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
+                               data.is_gps_reduced)
+    result = run_pull_anchor_analysis(tracks, data.imu_40mg, np.random.default_rng(args.seed),
+                                      args.permutations, args.bootstrap)
+    args.out.mkdir(parents=True, exist_ok=True)
+    for name in ("events", "tests", "gps_noise", "sensitivity"):
+        getattr(result, name).to_csv(args.out / f"{name}.csv", index=False)
+    result.pull_matrix.to_csv(args.out / "pull_matrix.csv")
+    fig, table = plot_pull_anchor(result, load_leadership_comparison(args.out.parent))
+    written = save_triplet(fig, table, args.out / "pull_anchor")
+    plt.close(fig)
+    log.info("wrote %s and tables in %s", written["png"].name, args.out)
+    return 0
+
+
+def load_leadership_comparison(leadership_dir: Path) -> pd.DataFrame | None:
+    """Formation role and asymmetry plus Dumont share (raw), if those runs exist."""
+    formation_csv = leadership_dir / FORMATION_SUBDIR / "formation_leading_edge.csv"
+    dumont_csv = leadership_dir / LEADERSHIP_SUBDIR / "dumont_leadership.csv"
+    if not (formation_csv.is_file() and dumont_csv.is_file()):
+        log.warning("formation or Dumont tables missing in %s; comparison panel left empty", leadership_dir)
+        return None
+    formation = pd.read_csv(formation_csv)
+    formation = formation[(formation["scenario"] == "raw") & (formation["band"] == formation["band"].iloc[0])]
+    dumont = pd.read_csv(dumont_csv)
+    dumont = dumont[dumont["scenario"] == "raw"]
+    return (formation[["lom", "role", "asymmetry"]].rename(columns={"asymmetry": "formation_asymmetry"})
+            .merge(dumont[["lom", "share"]].rename(columns={"share": "dumont_share"}), on="lom", how="outer"))
+
+
 def _load_herd_tracks(db: Path | None):
     """Gap-filled herd tracks from heifer_vf.db, or None after logging the reason."""
-    from davasus.vf.dashboard.data import load_dashboard_data
     from davasus.vf.initiation import build_herd_tracks
+
+    data = _load_dashboard(db)
+    if data is None:
+        return None
+    return build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
+                             data.is_gps_reduced)
+
+
+def _load_dashboard(db: Path | None):
+    """Minute cubes from heifer_vf.db, or None after logging the reason."""
+    from davasus.vf.dashboard.data import load_dashboard_data
 
     try:
         db_path, _ = _resolve_db_and_root(db, need_root=False)
@@ -440,8 +521,7 @@ def _load_herd_tracks(db: Path | None):
     if not data.has_space_weather:
         log.warning("no space weather in the database; reduced-GPS minutes are not excluded "
                     "(run davasus-vf-spaceweather)")
-    return build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
-                             data.is_gps_reduced)
+    return data
 
 
 def _configure_logging(verbose: bool) -> None:

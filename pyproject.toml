@@ -71,6 +71,7 @@ davasus-vf-dashboard = "davasus.vf.cli:dashboard_main"
 davasus-vf-spaceweather = "davasus.vf.cli:spaceweather_main"
 davasus-vf-leadership = "davasus.vf.cli:leadership_main"
 davasus-vf-formation = "davasus.vf.cli:formation_main"
+davasus-vf-pull-anchor = "davasus.vf.cli:pull_anchor_main"
 
 [project.urls]
 Repository = "https://github.com/zerotonin/davasus"

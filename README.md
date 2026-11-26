@@ -85,6 +85,7 @@ davasus-vf-spaceweather           # GFZ Hp30 / ap30 / Kp for the trial into heif
 davasus-vf-dashboard              # interactive desktop dashboard (needs the gui extra)
 davasus-vf-leadership             # Dumont (2005) first-mover analysis, tables and figure
 davasus-vf-formation              # leading edge of the moving herd (positional leadership)
+davasus-vf-pull-anchor            # who pulls whom: pair separation-reunion events
 ```
 
 **Dashboard.** `pip install -e ".[gui]"` (PySide6, pyqtgraph). The map shows
@@ -131,6 +132,19 @@ lag-corrected positions, next to the along-axis offset extrapolated to zero
 herd speed, which lag cannot shift. A front or rear role is called only when
 all three agree. A heading check guards against fixed geographic GPS
 offsets.
+
+**Pull and anchor (Strandburg-Peshkin et al. 2015).** `davasus-vf-pull-anchor`
+finds events in which a pair's distance rises and falls again by at least
+22 m. The heifer that moved more while the gap opened initiated the event;
+if the partner then closed the gap it is a pull, if the initiator came back
+it is an anchor. The thresholds sit above the GPS noise measured on still
+heifers (IMU near zero for 15 min or more; 99 % of their pair-distance range
+within 20 min is about 20 m), and moved distances are corrected by the
+noise floor. Each heifer's lead share, pulls led / (led + followed), cancels
+general mobility; it is tested against random pull directions, run on raw
+and lag-corrected positions, and at 15 and 30 m. A heifer is called leader or
+follower when her lead-share CI excludes 0.5 on the same side in both
+scenarios.
 
 ## Repository layout
 
