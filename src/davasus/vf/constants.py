@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import IntEnum
 
 from davasus.constants import (
@@ -145,6 +146,42 @@ PL_PSEUDO_WINS: float = 0.1
 PL_MAX_ITERATIONS: int = 500
 PL_TOLERANCE: float = 1e-8
 RANDOM_SEED: int = 20_241_125
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Paddocks  « Parzelle 1-6 = A-F, eShepherd parcels »        │
+# └────────────────────────────────────────────────────────────┘
+
+# Naming: a *paddock* is one of the six fixed sub-areas of the pasture
+# (Parzelle 1-6, map letters A-F); a *parcel* is one eShepherd virtual-fence
+# layout, i.e. the paddocks open at one time (e.g. "heifers 3_4" = C + D).
+PARCEL_SHAPE_SUBDIR: str = "Parzellen_Tränke/Parzellen"
+PADDOCK_SLIVER_M2: float = 100.0
+# Surveyed tree patches (permanent shade, basis of in_shadow); polygon layers only.
+TREE_GEOPACKAGE: str = "Luxuswiesen_Wald.gpkg"
+# A paddock is open in a parcel when this share of its area lies inside it.
+PADDOCK_OPEN_SHARE: float = 0.5
+
+
+@dataclass(frozen=True)
+class PaddockRecipe:
+    """Paddock = intersection of ``intersect`` layouts minus paddocks in ``minus``."""
+
+    letter: str
+    parzelle: int
+    intersect: tuple[str, ...]
+    minus: tuple[str, ...] = ()
+
+
+# Ordered so every paddock in ``minus`` is built before it is used. Each
+# shared area of two consecutive layouts is the paddock both kept open.
+PADDOCK_RECIPES: tuple[PaddockRecipe, ...] = (
+    PaddockRecipe("C", 3, ("heifers 3_2", "heifers 3_4")),
+    PaddockRecipe("D", 4, ("heifers 3_4", "heifers 4_5")),
+    PaddockRecipe("E", 5, ("heifers 4_5", "heifers 5_6")),
+    PaddockRecipe("B", 2, ("heifers 3_2",), ("C",)),
+    PaddockRecipe("F", 6, ("heifers 5_6",), ("E",)),
+    PaddockRecipe("A", 1, ("luciano Heifers 2",), ("B",)),
+)
 
 # ┌────────────────────────────────────────────────────────────┐
 # │ Figures and movie  « semantic colours, scales »            │
