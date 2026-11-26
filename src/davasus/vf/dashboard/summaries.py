@@ -50,10 +50,10 @@ def describe_event(data: DashboardData, i: int) -> Rows:
     event = data.events.loc[row]
     elapsed = data.minutes[i] - event["start_utc"]
     rows = [
-        ("activation", str(event["label"])),
-        ("open parcels", str(event["open_parcels"])),
-        ("cut-off parcel", _int_or_dash(event["cut_off_parcel"])),
-        ("new parcel", _int_or_dash(event["new_parcel"])),
+        ("eShepherd parcel", str(event["label"])),
+        ("open paddocks", describe_open_paddocks(data, row)),
+        ("cut-off paddock", data.paddock_letter(event["cut_off_parcel"])),
+        ("new paddock", data.paddock_letter(event["new_parcel"])),
         ("started (UTC)", f"{event['start_utc']:%Y-%m-%d %H:%M}"),
         ("time since start", _format_timedelta(elapsed)),
         ("parcel size", _num(event["parcel_size_ha"], "ha", 2)),
@@ -65,6 +65,14 @@ def describe_event(data: DashboardData, i: int) -> Rows:
     if isinstance(event["comments"], str) and event["comments"].strip():
         rows.append(("comment", event["comments"].strip()))
     return rows
+
+
+def describe_open_paddocks(data: DashboardData, row: int) -> str:
+    """'C (3), D (4)' from the geometry; the logged parcel numbers otherwise."""
+    letters = data.event_paddocks[row] if row < len(data.event_paddocks) else ()
+    if not letters:
+        return str(data.events.loc[row, "open_parcels"]).replace("_", " + ")
+    return ", ".join(f"{k} ({data.paddock_numbers[k]})" for k in letters)
 
 
 def describe_weather(data: DashboardData, i: int) -> Rows:

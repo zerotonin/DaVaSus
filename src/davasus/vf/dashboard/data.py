@@ -11,7 +11,7 @@
 from __future__ import annotations
 
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 import pandas as pd
@@ -20,7 +20,7 @@ from davasus.thi import compute_thi_nrc
 from davasus.vf.geometry import LocalProjection, is_plausible_fix
 from davasus.vf.gnss_quality import HP30_STORM_THRESHOLD
 from davasus.vf.learning import compute_success_ratio
-from davasus.vf.load import load_events, load_heifers
+from davasus.vf.load import load_events, load_heifers, load_parcel_geometry
 
 FIX_COLUMNS: tuple[str, ...] = (
     "neckband_id", "lom", "timestamp", "gnss_lat", "gnss_lon", "outside",
@@ -33,6 +33,7 @@ WEATHER_COLUMNS: tuple[str, ...] = (
 )
 SPACE_COLUMNS: tuple[str, ...] = ("hp30", "ap30", "kp")
 MISSING_CODE: int = -1
+Ring = tuple[np.ndarray, np.ndarray]
 WEATHER_INTERVAL_MIN: int = 15
 
 # ┌────────────────────────────────────────────────────────────┐
@@ -73,6 +74,23 @@ class DashboardData:
     space_weather: pd.DataFrame
     event_index: np.ndarray
     is_gps_reduced: np.ndarray
+    paddocks: dict[str, list[Ring]] = field(default_factory=dict)
+    paddock_numbers: dict[str, int] = field(default_factory=dict)
+    parcel_outlines: dict[str, tuple[np.ndarray, np.ndarray, np.ndarray]] = field(default_factory=dict)
+    event_paddocks: tuple[tuple[str, ...], ...] = ()
+    trees: dict[str, list[Ring]] = field(default_factory=dict)
+
+    @property
+    def has_paddocks(self) -> bool:
+        return bool(self.paddocks)
+
+    def paddock_letter(self, parzelle: object) -> str:
+        """'C (3)' for Parzelle 3, the bare number if paddocks are unknown."""
+        if parzelle is None or pd.isna(parzelle):
+            return "-"
+        number = int(parzelle)
+        letter = next((k for k, v in self.paddock_numbers.items() if v == number), None)
+        return f"{letter} ({number})" if letter else str(number)
 
     @property
     def n_minutes(self) -> int:
@@ -108,6 +126,7 @@ def load_dashboard_data(connection: sqlite3.Connection) -> DashboardData:
     )
     cubes = build_fix_cubes(fixes, minutes, loms, projection)
     space_weather = build_space_weather_frame(_read_table(connection, "space_weather"), minutes)
+    geometry = build_geometry(load_parcel_geometry(connection), projection, events)
     return DashboardData(
         minutes=minutes,
         loms=loms,
@@ -120,7 +139,41 @@ def load_dashboard_data(connection: sqlite3.Connection) -> DashboardData:
         event_index=build_event_index(events, minutes),
         is_gps_reduced=space_weather["hp30"].ge(HP30_STORM_THRESHOLD).to_numpy(),
         **cubes,
+        **geometry,
     )
+
+
+def build_geometry(frames: dict[str, pd.DataFrame], projection: LocalProjection,
+                   events: pd.DataFrame) -> dict[str, object]:
+    """Paddock and tree rings, parcel outlines in local metres, open paddocks per event."""
+    paddocks: dict[str, list[Ring]] = {}
+    numbers: dict[str, int] = {}
+    if not frames["paddocks"].empty:
+        for (letter, _), ring in frames["paddocks"].groupby(["paddock", "ring"], sort=False):
+            paddocks.setdefault(letter, []).append(projection.to_metres(ring["lat"], ring["lon"]))
+            numbers[letter] = int(ring["parzelle"].iloc[0])
+    outlines = {}
+    if not frames["parcel_outlines"].empty:
+        for label, group in frames["parcel_outlines"].groupby("label"):
+            x, y = projection.to_metres(group["lat"], group["lon"])
+            outlines[label] = (x, y, group["is_vf_edge"].to_numpy(bool))
+    open_by_label = (frames["parcel_paddocks"].groupby("label")["paddock"].apply(tuple).to_dict()
+                     if not frames["parcel_paddocks"].empty else {})
+    event_paddocks = tuple(tuple(sorted(open_by_label.get(label, ()), key=lambda k: numbers.get(k, 0)))
+                           for label in events["label"])
+    return {"paddocks": paddocks, "paddock_numbers": numbers, "parcel_outlines": outlines,
+            "event_paddocks": event_paddocks, "trees": build_rings(frames.get("tree_patches"), "patch",
+                                                                   projection)}
+
+
+def build_rings(frame: pd.DataFrame | None, key: str, projection: LocalProjection) -> dict[str, list[Ring]]:
+    """Rings in local metres per ``key`` (one list entry per ring)."""
+    rings: dict[str, list[Ring]] = {}
+    if frame is None or frame.empty:
+        return rings
+    for (name, _), ring in frame.groupby([key, "ring"], sort=False):
+        rings.setdefault(name, []).append(projection.to_metres(ring["lat"], ring["lon"]))
+    return rings
 
 
 def _read_fixes(connection: sqlite3.Connection) -> pd.DataFrame:

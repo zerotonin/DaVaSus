@@ -122,7 +122,7 @@ class TimelineWidget(pg.GraphicsLayoutWidget):
                 plot.addItem(pg.LinearRegionItem(
                     (start.timestamp(), end.timestamp()), movable=False,
                     brush=pg.mkBrush(REDUCED_GPS_COLOUR + "70"), pen=pg.mkPen(None)))
-        for event in self.data.events.itertuples():
+        for row, event in enumerate(self.data.events.itertuples()):
             start = event.start_utc.timestamp()
             for plot in self._plots:
                 if event.manual_herding == 1 and pd.notna(event.end_utc):
@@ -131,7 +131,8 @@ class TimelineWidget(pg.GraphicsLayoutWidget):
                     plot.addItem(region)
                 plot.addItem(pg.InfiniteLine(start, pen=pg.mkPen("k", style=Qt.PenStyle.DashLine)))
             if not event.is_transition:
-                label = pg.TextItem(event.open_parcels, color="k", anchor=(0, 0))
+                letters = self.data.event_paddocks[row] if row < len(self.data.event_paddocks) else ()
+                label = pg.TextItem(" + ".join(letters) or event.open_parcels, color="k", anchor=(0, 0))
                 self._plots[0].addItem(label)
                 label.setPos(start, float(np.nanmax(self._hourly["thi_nrc"])))
 
