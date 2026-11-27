@@ -87,6 +87,8 @@ davasus-vf-leadership             # Dumont (2005) first-mover analysis, tables a
 davasus-vf-formation              # leading edge of the moving herd (positional leadership)
 davasus-vf-pull-anchor            # who pulls whom: pair separation-reunion events
 davasus-vf-paddocks               # parcel outlines and paddocks A-F into heifer_vf.db
+davasus-vf-leadership-context     # new-paddock entry, first at the fence, pre-departure activity
+davasus-vf-leadership-situations  # first into the shade, first away from the fence, turn leadership
 ```
 
 **Dashboard.** `pip install -e ".[gui]"` (PySide6, pyqtgraph). The map shows
@@ -158,6 +160,35 @@ overlapping parcels and writes `parcel_outlines`, `paddocks` and
 (`tree_patches`, from the polygon layers of `Luxuswiesen_Wald.gpkg`; the
 areas behind `in_shadow`). The dashboard draws the paddocks faintly, the
 trees filled, and highlights the active parcel.
+
+**Leadership in context.** `davasus-vf-leadership-context` (after
+`davasus-vf-paddocks`) runs three analyses:
+- *New-paddock entry:* after each switch that opens a paddock closed in the
+  previous layout, a heifer's entry is her first two consecutive fixes at
+  least 3.5 m inside it. Switches with manual herding are not ranked.
+- *First at the fence:* episodes are runs of minutes with any heifer in the
+  collar's pre-fence zone (Outside 5/6). Zone entries go through the Dumont
+  statistics. Cue rate (audio or pulse within 5 min) is compared by arrival
+  position, both across all entrants and within each heifer.
+- *Activity before departures:* for each group movement, the 240 mg IMU ticks
+  in still minutes 15-0 min before onset are compared with 45-30 min before.
+  This is tested against departure order.
+
+All rankings are then correlated with the Dumont, formation and pull/anchor
+results, if those runs exist.
+
+**Shade, fence retreat and turns.** `davasus-vf-leadership-situations` runs
+three more:
+- *Shade:* an arrival is the herd share inside a surveyed tree patch rising
+  from below 10 % to 50 %. Daytime arrivals are ranked; those at THI ≥ 68
+  are also run on their own.
+- *Fence retreat:* a heifer has left the pre-fence zone after 3 clear fixes.
+  We test whether the others follow a cued first exit sooner.
+- *Turns (Nagy et al. 2010):* time-delayed correlation of 1-min headings
+  while the herd travels.
+  - The peak delay is refined to fractions of a minute.
+  - Scores are given raw, fully lag-corrected and with the collar-lag trend
+    regressed out. At 1-min sampling the full correction over-shoots.
 
 ## Repository layout
 

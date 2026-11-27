@@ -491,6 +491,166 @@ def load_leadership_comparison(leadership_dir: Path) -> pd.DataFrame | None:
 
 
 # ┌────────────────────────────────────────────────────────────┐
+# │ Leadership in context  « davasus-vf-leadership-context »   │
+# └────────────────────────────────────────────────────────────┘
+
+LEADERSHIP_CONTEXT_SUBDIR: str = "context"
+
+
+def build_leadership_context_parser() -> argparse.ArgumentParser:
+    from davasus.vf.constants import BOOTSTRAP_DRAWS, PERMUTATIONS, RANDOM_SEED
+
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-leadership-context",
+        description="Leadership in context: entry into newly opened paddocks, first at the virtual "
+                    "fence and who gets cued, activity before group movements.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path,
+                   default=REPO_ROOT / "figures" / FIGURE_SUBDIR / LEADERSHIP_CONTEXT_SUBDIR)
+    p.add_argument("--permutations", type=int, default=PERMUTATIONS)
+    p.add_argument("--bootstrap", type=int, default=BOOTSTRAP_DRAWS)
+    p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def leadership_context_main(argv: list[str] | None = None) -> int:
+    """Run the three context analyses and write tables plus the six-panel figure."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from davasus.vf.constants import PREDEPARTURE_IMU_COLUMN
+    from davasus.vf.initiation import build_herd_tracks
+    from davasus.vf.leadership_context import compute_agreement, run_leadership_context
+    from davasus.vf.load import load_minute_cube
+    from davasus.vf.viz_leadership_context import plot_leadership_context
+    from davasus.viz import save_triplet
+
+    args = build_leadership_context_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    data = _load_dashboard(args.db)
+    if data is None:
+        return 2
+    if not data.has_paddocks:
+        log.error("no paddocks in the database; run davasus-vf-paddocks first")
+        return 2
+    db_path, _ = _resolve_db_and_root(args.db, need_root=False)
+    connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    try:
+        ticks = load_minute_cube(connection, PREDEPARTURE_IMU_COLUMN, data.minutes, data.loms)
+    finally:
+        connection.close()
+    tracks = build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
+                               data.is_gps_reduced)
+    result = run_leadership_context(data, tracks, ticks, np.random.default_rng(args.seed),
+                                    args.permutations, args.bootstrap)
+    args.out.mkdir(parents=True, exist_ok=True)
+    for name in ("switches", "paddock_entries", "paddock_w", "fence_episodes", "fence_entries",
+                 "fence_per_heifer", "fence_nulls", "fence_w", "fence_cue_by_position", "fence_cue_tests",
+                 "predeparture", "predeparture_tests", "predeparture_profiles"):
+        getattr(result, name).to_csv(args.out / f"{name}.csv", index=False)
+    agreement = compute_agreement(result.per_heifer, load_all_leadership_rankings(args.out.parent))
+    agreement.to_csv(args.out / "agreement.csv", index=False)
+    fig, table = plot_leadership_context(result, agreement)
+    written = save_triplet(fig, table, args.out / "leadership_context")
+    plt.close(fig)
+    log.info("wrote %s and tables in %s", written["png"].name, args.out)
+    return 0
+
+
+def load_all_leadership_rankings(leadership_dir: Path) -> pd.DataFrame | None:
+    """Dumont share, formation asymmetry and pull lead share (raw), where the runs exist."""
+    comparison = load_leadership_comparison(leadership_dir)
+    pull_csv = leadership_dir / PULL_ANCHOR_SUBDIR / "pull_anchor.csv"
+    if not pull_csv.is_file():
+        log.warning("pull/anchor table missing in %s", leadership_dir)
+        return comparison
+    pulls = pd.read_csv(pull_csv)
+    pulls = pulls.loc[pulls["scenario"] == "raw", ["lom", "lead_share"]]
+    return pulls if comparison is None else comparison.merge(pulls, on="lom", how="outer")
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Situations  « davasus-vf-leadership-situations »           │
+# └────────────────────────────────────────────────────────────┘
+
+LEADERSHIP_SITUATIONS_SUBDIR: str = "situations"
+
+
+def build_leadership_situations_parser() -> argparse.ArgumentParser:
+    from davasus.vf.constants import BOOTSTRAP_DRAWS, PERMUTATIONS, RANDOM_SEED
+
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-leadership-situations",
+        description="Leadership into the shade, away from the virtual fence and through turns "
+                    "(Nagy et al. 2010).",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path,
+                   default=REPO_ROOT / "figures" / FIGURE_SUBDIR / LEADERSHIP_SITUATIONS_SUBDIR)
+    p.add_argument("--permutations", type=int, default=PERMUTATIONS)
+    p.add_argument("--bootstrap", type=int, default=BOOTSTRAP_DRAWS)
+    p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def leadership_situations_main(argv: list[str] | None = None) -> int:
+    """Run the shade, retreat and turn analyses and write tables plus the six-panel figure."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from davasus.vf.initiation import build_herd_tracks
+    from davasus.vf.leadership_context import compute_agreement
+    from davasus.vf.leadership_situations import run_leadership_situations
+    from davasus.vf.viz_leadership_situations import plot_leadership_situations
+    from davasus.viz import save_triplet
+
+    args = build_leadership_situations_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    data = _load_dashboard(args.db)
+    if data is None:
+        return 2
+    if not data.trees:
+        log.error("no tree patches in the database; run davasus-vf-paddocks first")
+        return 2
+    tracks = build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
+                               data.is_gps_reduced)
+    result = run_leadership_situations(data, tracks, np.random.default_rng(args.seed),
+                                       args.permutations, args.bootstrap)
+    args.out.mkdir(parents=True, exist_ok=True)
+    for name in ("shade_episodes", "shade_arrivals", "shade_per_heifer", "shade_nulls", "shade_w",
+                 "retreat_exits", "retreats", "retreat_per_heifer", "retreat_nulls", "retreat_w",
+                 "retreat_tests", "turn_scores", "turn_correlation", "turn_test"):
+        getattr(result, name).to_csv(args.out / f"{name}.csv", index=False)
+    result.turn_delays.to_csv(args.out / "turn_delays.csv")
+    table = result.per_heifer.merge(load_context_rankings(args.out.parent), on="lom", how="left")
+    agreement = compute_agreement(table, load_all_leadership_rankings(args.out.parent))
+    agreement.to_csv(args.out / "agreement.csv", index=False)
+    fig, per_heifer = plot_leadership_situations(result, agreement)
+    written = save_triplet(fig, per_heifer, args.out / "leadership_situations")
+    plt.close(fig)
+    log.info("wrote %s and tables in %s", written["png"].name, args.out)
+    return 0
+
+
+def load_context_rankings(leadership_dir: Path) -> pd.DataFrame:
+    """Per-heifer table of davasus-vf-leadership-context, or just the column ``lom``."""
+    context_csv = leadership_dir / LEADERSHIP_CONTEXT_SUBDIR / "leadership_context.csv"
+    if not context_csv.is_file():
+        log.warning("leadership-context table missing in %s", leadership_dir)
+        return pd.DataFrame(columns=["lom"])
+    return pd.read_csv(context_csv).drop(columns=["lag_s"], errors="ignore")
+
+
+# ┌────────────────────────────────────────────────────────────┐
 # │ Paddocks  « davasus-vf-paddocks »                          │
 # └────────────────────────────────────────────────────────────┘
 
