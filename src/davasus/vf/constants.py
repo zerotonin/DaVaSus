@@ -68,6 +68,8 @@ INITIATION_WINDOWS_MIN: tuple[int, ...] = (2, 5, 15)
 SR_BLOCK_SIZE: int = 5
 SR_CRITERION: float = 0.8
 PERMUTATIONS: int = 10_000
+# Permutations per vectorised block (block x observations floats in memory).
+PERMUTATION_CHUNK: int = 1_000
 
 FIGURE_SUBDIR: str = "08_vf_leadership"
 
@@ -138,6 +140,53 @@ PULL_DISTANCE_SMOOTHING_MIN: int = 3
 PULL_MIN_RUN_MIN: int = 10
 PULL_MAX_PHASE_MIN: int = 60
 PULL_MIN_STRENGTH: float = 0.1
+
+# Leadership in context: paddock entry after a switch, fence approach,
+# activity before group departures.
+# A heifer has entered a paddock when MOVE_NOISE_M inside its boundary for this
+# many consecutive minutes; entries are searched this long after activation.
+PADDOCK_ENTRY_RUN_MIN: int = 2
+PADDOCK_ENTRY_WINDOW_MIN: int = 600
+# Fence-approach episodes: any heifer in the pre-fence zone; a gap this long
+# with nobody in the zone ends an episode. Fewer entrants: not a group approach.
+FENCE_ZONE_CODES: tuple[int, ...] = (OutsideCode.PRE_FENCE_ZONE, OutsideCode.PRE_FENCE_ZONE_WITH_STIMULUS)
+FENCE_EPISODE_GAP_MIN: int = 15
+FENCE_EPISODE_MIN_ENTRANTS: int = 3
+# A heifer counts as cued when she gets an audio cue or pulse this soon after
+# her own zone entry.
+FENCE_CUE_WINDOW_MIN: int = 5
+# Activity before departures: 240 mg ticks separate walking from grazing (40 mg
+# saturates while grazing). Windows in minutes relative to the bout onset,
+# half-open [start, stop).
+PREDEPARTURE_IMU_COLUMN: str = "imu_tick_240mg"
+PREDEPARTURE_WINDOW_MIN: tuple[int, int] = (-15, 0)
+PREDEPARTURE_BASELINE_MIN: tuple[int, int] = (-45, -30)
+PREDEPARTURE_MIN_COVERAGE: float = 0.5
+
+# Shade arrival: herd share inside a tree patch (median over SHADE_SMOOTH_MIN)
+# crossing SHADE_FILL_ONSET is an arrival; ranking starts at the last minute
+# below SHADE_FILL_START within SHADE_LOOKBACK_MIN. Patches are small, so no
+# noise buffer, but entries need SHADE_ENTRY_RUN_MIN fixes in a row.
+SHADE_FILL_START: float = 0.1
+SHADE_FILL_ONSET: float = 0.5
+SHADE_SMOOTH_MIN: int = 5
+SHADE_LOOKBACK_MIN: int = 120
+SHADE_POST_MIN: int = 60
+SHADE_ENTRY_RUN_MIN: int = 3
+# THI from which cattle show heat stress (Zimbelman et al. 2009: 68).
+SHADE_HOT_THI: float = 68.0
+# Fence retreat: a heifer has left the zone once she has a fix outside it
+# FENCE_EXIT_CLEAR_MIN minutes in a row; a cue this many minutes before her
+# exit counts as a cue on the retreat.
+FENCE_EXIT_CLEAR_MIN: int = 3
+FENCE_EXIT_CUE_MIN: int = 2
+# Turn leadership (Nagy et al. 2010): headings from 1-min steps of at least
+# MOVE_MIN_M while the herd travels; delays up to TURN_MAX_LAG_MIN; a pair
+# needs TURN_MIN_PAIR_MINUTES joint headings and a peak correlation of
+# TURN_MIN_CORRELATION.
+TURN_MAX_LAG_MIN: int = 3
+TURN_MIN_PAIR_MINUTES: int = 100
+TURN_MIN_CORRELATION: float = 0.5
 
 # Statistics.
 BOOTSTRAP_DRAWS: int = 2_000
