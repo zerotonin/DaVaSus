@@ -21,6 +21,7 @@ from scipy.optimize import minimize_scalar
 from davasus.vf.constants import (
     BOOTSTRAP_DRAWS,
     GRADED_NULL_DRAWS,
+    PERMUTATION_CHUNK,
     PERMUTATIONS,
     PL_MAX_ITERATIONS,
     PL_PSEUDO_WINS,
@@ -344,3 +345,96 @@ def test_order_w(ranks: pd.DataFrame, days: pd.Series, rng: np.random.Generator,
             "null_hi": float(np.quantile(null, 0.975)),
             "p": float((np.sum(null >= observed) + 1.0) / (n_permutations + 1.0)),
             "leader_benchmark": compute_leader_w_benchmark(values.shape[1])}
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Fast permutations  « shuffles within groups at once »      │
+# └────────────────────────────────────────────────────────────┘
+
+
+def permute_within_groups(values: np.ndarray, groups: np.ndarray, rng: np.random.Generator,
+                          n_permutations: int) -> np.ndarray:
+    """``n_permutations`` shuffles of ``values`` within each group, shape (n_permutations, n).
+
+    Sorting ``group + U(0, 1)`` keeps the groups apart and orders each group at
+    random, so every row is one independent within-group permutation.
+    """
+    values = np.asarray(values)
+    codes = pd.factorize(np.asarray(groups))[0].astype(float)
+    home = np.argsort(codes, kind="stable")
+    order = np.argsort(codes[None, :] + rng.random((n_permutations, len(codes))), axis=1)
+    permuted = np.empty((n_permutations, len(values)), dtype=values.dtype)
+    permuted[:, home] = values[order]
+    return permuted
+
+
+def iterate_permutation_chunks(n_permutations: int, chunk: int = PERMUTATION_CHUNK):
+    """Chunk sizes that add up to ``n_permutations`` (keeps the arrays small)."""
+    done = 0
+    while done < n_permutations:
+        size = min(chunk, n_permutations - done)
+        yield size
+        done += size
+
+
+def test_within_group_spearman(frame: pd.DataFrame, x: str, y: str, group: str, rng: np.random.Generator,
+                               n_permutations: int = PERMUTATIONS) -> dict[str, float]:
+    """Mean within-group Spearman rho of ``x`` on ``y``, null from shuffling ``x`` within groups.
+
+    Spearman rho is Pearson on average ranks; with the ``y`` ranks fixed,
+    rho_g = sum_i c_i * w_i, c the centred ``x`` ranks and
+    w_i = d_i / sqrt(sum c^2 * sum d^2) with d the centred ``y`` ranks.
+    Shuffling ``x`` within a group shuffles c, so a block of permutations
+    is one matrix product. Groups without spread in x or y are dropped
+    (``spearmanr`` gives NaN there).
+    """
+    keys = frame[group]
+    centred = {}
+    for column in (x, y):
+        rank = frame.groupby(group)[column].rank(method="average")
+        centred[column] = rank - rank.groupby(keys).transform("mean")
+    ss_x = (centred[x] ** 2).groupby(keys).transform("sum")
+    ss_y = (centred[y] ** 2).groupby(keys).transform("sum")
+    keep = ((ss_x > 0) & (ss_y > 0)).to_numpy()
+    c = centred[x].to_numpy()[keep]
+    w = (centred[y] / np.sqrt(ss_x * ss_y)).to_numpy()[keep]
+    groups = keys.to_numpy()[keep]
+    n_groups = len(np.unique(groups))
+    if n_groups == 0:
+        return {"n_groups": 0, "mean_rho": np.nan, "null_mean": np.nan, "null_lo": np.nan,
+                "null_hi": np.nan, "p_two_sided": np.nan}
+    observed = float(c @ w / n_groups)
+    null = np.concatenate([permute_within_groups(c, groups, rng, size) @ w / n_groups
+                           for size in iterate_permutation_chunks(n_permutations)])
+    return {"n_groups": n_groups, "mean_rho": observed, "null_mean": float(null.mean()),
+            "null_lo": float(np.quantile(null, 0.025)), "null_hi": float(np.quantile(null, 0.975)),
+            "p_two_sided": _two_sided_p(null, observed)}
+
+
+def test_flag_difference(flags: np.ndarray, values: np.ndarray, blocks: np.ndarray,
+                         rng: np.random.Generator, n_permutations: int = PERMUTATIONS) -> dict[str, float]:
+    """Mean ``values`` where flagged minus where not; flags shuffled within blocks (days)."""
+    flags = np.asarray(flags, dtype=bool)
+    values = np.asarray(values, dtype=float)
+    observed = float(_flag_difference(flags[None, :], values)[0])
+    null = np.concatenate([_flag_difference(permute_within_groups(flags, blocks, rng, size), values)
+                           for size in iterate_permutation_chunks(n_permutations)])
+    finite = null[np.isfinite(null)]
+    return {"n": len(flags), "n_flagged": int(flags.sum()),
+            "mean_flagged": float(values[flags].mean()) if flags.any() else np.nan,
+            "mean_unflagged": float(values[~flags].mean()) if (~flags).any() else np.nan,
+            "difference": observed, "null_mean": float(finite.mean()) if len(finite) else np.nan,
+            "p_two_sided": _two_sided_p(finite, observed) if len(finite) else np.nan}
+
+
+def _flag_difference(flags: np.ndarray, values: np.ndarray) -> np.ndarray:
+    """Row-wise mean where flagged minus where not; NaN for rows with one class only."""
+    n_flagged = flags.sum(axis=1)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        return (flags @ values) / n_flagged - ((~flags) @ values) / (flags.shape[1] - n_flagged)
+
+
+def _two_sided_p(null: np.ndarray, observed: float) -> float:
+    """Distance from the null mean, plus-one corrected."""
+    centre = null.mean()
+    return float((np.sum(np.abs(null - centre) >= abs(observed - centre)) + 1.0) / (len(null) + 1.0))
