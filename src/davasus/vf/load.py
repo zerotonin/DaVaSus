@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 
+import numpy as np
 import pandas as pd
 
 
@@ -79,6 +80,29 @@ def load_parcel_geometry(connection: sqlite3.Connection) -> dict[str, pd.DataFra
         except pd.errors.DatabaseError:
             frames[name] = pd.DataFrame()
     return frames
+
+
+def load_minute_cube(
+    connection: sqlite3.Connection,
+    column: str,
+    minutes: pd.DatetimeIndex,
+    loms: tuple[str, ...] | list[str],
+) -> np.ndarray:
+    """One ``heifer_fixes`` column as a (minute, animal) array, NaN where no fix.
+
+    Several fixes of one animal in the same minute keep the last one, as in the
+    dashboard cubes.
+    """
+    if not column.isidentifier():
+        raise ValueError(f"not a column name: {column!r}")
+    fixes = pd.read_sql_query(f"SELECT lom, timestamp, {column} FROM heifer_fixes", connection)
+    stamps = pd.to_datetime(fixes["timestamp"], utc=True, format="ISO8601").dt.floor("min")
+    row = minutes.get_indexer(stamps)
+    col = pd.Index(list(loms)).get_indexer(fixes["lom"])
+    keep = (row >= 0) & (col >= 0)
+    cube = np.full((len(minutes), len(loms)), np.nan, dtype=np.float32)
+    cube[row[keep], col[keep]] = fixes[column].to_numpy(dtype=float, na_value=np.nan)[keep]
+    return cube
 
 
 def load_heifers(connection: sqlite3.Connection) -> pd.DataFrame:
