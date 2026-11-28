@@ -188,6 +188,29 @@ TURN_MAX_LAG_MIN: int = 3
 TURN_MIN_PAIR_MINUTES: int = 100
 TURN_MIN_CORRELATION: float = 0.5
 
+# Combined hierarchy: mean rank over the measures that showed leaders (D27).
+# Tiers by rank for figures: top, second row, middle; the rest follow.
+HIERARCHY_TIER_LIMITS: tuple[int, int, int] = (3, 9, 16)
+# Herd splits: fixes within SPLIT_DISTANCE_M chain into one group; a split
+# is at least two groups of SPLIT_MIN_GROUP heifers for SPLIT_MIN_LENGTH_MIN
+# minutes, with SPLIT_MIN_FIXES heifers located. Splits less than
+# SPLIT_MERGE_GAP_MIN apart with SPLIT_MERGE_AGREEMENT of the pairs on the
+# same sides are one event. SPLIT_DISTANCE_WIDE_M is the sensitivity run.
+SPLIT_DISTANCE_M: float = 30.0
+SPLIT_DISTANCE_WIDE_M: float = 50.0
+SPLIT_MIN_GROUP: int = 3
+SPLIT_MIN_LENGTH_MIN: int = 5
+SPLIT_MIN_FIXES: int = 22
+SPLIT_MERGE_GAP_MIN: int = 30
+SPLIT_MERGE_AGREEMENT: float = 0.9
+# Pair bonds, built on days without a split: association is how often one
+# heifer is among the other's ASSOCIATION_NEIGHBOURS nearest, sampled every
+# ASSOCIATION_STEP_MIN minutes; a pull bond needs PULL_BOND_MIN_EVENTS.
+ASSOCIATION_NEIGHBOURS: int = 3
+ASSOCIATION_STEP_MIN: int = 5
+PULL_BOND_MIN_EVENTS: int = 10
+MODULARITY_NULL_DRAWS: int = 1_000
+
 # Statistics.
 BOOTSTRAP_DRAWS: int = 2_000
 GRADED_NULL_DRAWS: int = 2_000
