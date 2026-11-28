@@ -720,6 +720,7 @@ def load_per_heifer_measures(leadership_dir: Path) -> pd.DataFrame | None:
 # └────────────────────────────────────────────────────────────┘
 
 SUBGROUPS_SUBDIR: str = "subgroups"
+JOURNEY_SUBDIR: str = "journey"
 
 
 def build_subgroups_parser() -> argparse.ArgumentParser:
@@ -769,6 +770,61 @@ def subgroups_main(argv: list[str] | None = None) -> int:
         layer.to_csv(args.out / f"bond_{name}.csv")
     fig, pairs = plot_subgroups(result, hierarchy)
     written = save_triplet(fig, pairs, args.out / "subgroups")
+    plt.close(fig)
+    log.info("wrote %s and tables in %s", written["png"].name, args.out)
+    return 0
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Learning journey  « davasus-vf-journey »                   │
+# └────────────────────────────────────────────────────────────┘
+
+
+def build_journey_parser() -> argparse.ArgumentParser:
+    from davasus.vf.constants import PERMUTATIONS, RANDOM_SEED
+
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-journey",
+        description="Fence interactions per heifer: exposure, conditioning, fence moves and herd mates' cues.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "figures" / FIGURE_SUBDIR / JOURNEY_SUBDIR)
+    p.add_argument("--permutations", type=int, default=PERMUTATIONS)
+    p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def journey_main(argv: list[str] | None = None) -> int:
+    """Run the learning-journey analysis and write tables plus the six-panel figure."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from davasus.vf.initiation import build_herd_tracks
+    from davasus.vf.learning_journey import run_learning_journey
+    from davasus.vf.viz_learning_journey import plot_learning_journey
+    from davasus.viz import save_triplet
+
+    args = build_journey_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    data = _load_dashboard(args.db)
+    if data is None:
+        return 2
+    hierarchy_csv = args.out.parent / HIERARCHY_SUBDIR / "hierarchy.csv"
+    hierarchy = pd.read_csv(hierarchy_csv) if hierarchy_csv.is_file() else None
+    if hierarchy is None:
+        log.warning("no hierarchy.csv; ranks are left out (run davasus-vf-hierarchy)")
+    tracks = build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
+                               data.is_gps_reduced)
+    result = run_learning_journey(data, tracks, hierarchy, np.random.default_rng(args.seed), args.permutations)
+    args.out.mkdir(parents=True, exist_ok=True)
+    for name in ("interactions", "weeks", "curves", "fence_moves", "mate_cues", "correlations", "tests"):
+        getattr(result, name).to_csv(args.out / f"{name}.csv", index=False)
+    fig, table = plot_learning_journey(result)
+    written = save_triplet(fig, table, args.out / "learning_journey")
     plt.close(fig)
     log.info("wrote %s and tables in %s", written["png"].name, args.out)
     return 0

@@ -79,6 +79,7 @@ davasus-vf-leadership-context = "davasus.vf.cli:leadership_context_main"
 davasus-vf-leadership-situations = "davasus.vf.cli:leadership_situations_main"
 davasus-vf-hierarchy = "davasus.vf.cli:hierarchy_main"
 davasus-vf-subgroups = "davasus.vf.cli:subgroups_main"
+davasus-vf-journey = "davasus.vf.cli:journey_main"
 
 [project.urls]
 Repository = "https://github.com/zerotonin/davasus"

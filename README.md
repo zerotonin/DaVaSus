@@ -91,6 +91,7 @@ davasus-vf-leadership-context     # new-paddock entry, first at the fence, pre-d
 davasus-vf-leadership-situations  # first into the shade, first away from the fence, turn leadership
 davasus-vf-hierarchy              # combined hierarchy rank and the cues each rank receives
 davasus-vf-subgroups              # pair bonds, communities, and their test on herd splits
+davasus-vf-journey                # fence interactions per heifer: exposure, conditioning, social cues
 ```
 
 **Dashboard.** `pip install -e ".[gui]"` (PySide6, pyqtgraph). The map shows
@@ -204,6 +205,18 @@ communities come from Newman's (2006) modularity method. Both are tested on
 the splits themselves, when at least two groups of three or more heifers
 stand more than 30 m apart for five minutes: Mantel tests with heifers
 relabelled, plain and with the hierarchy-rank gap removed.
+
+**Learning journey.** `davasus-vf-journey` groups each heifer's cue minutes
+into fence interactions (cue minutes at most 2 min apart) and describes her
+on two axes: how often she interacts with the fence, and how often an
+interaction ends in a pulse instead of on the tone alone. It follows the
+pulsed share over her own interaction count, compares the 24 h before and
+after each fence move, and scores what an uncued heifer in the pre-fence
+zone does in the 3 min after a herd mate within 20 m is cued, against zone
+minutes in company while the herd is quiet. The cue columns are counter
+differences between fixes, so cues on a fix after a gap of more than 2 min
+count in the totals but not as interactions. Run `davasus-vf-hierarchy`
+first to have the ranks in the table.
 
 ## Repository layout
 
