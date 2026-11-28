@@ -2,12 +2,20 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from davasus.vf import learning_journey as journey
 from davasus.vf.constants import LEARNING_BLOCK, OutsideCode
+from davasus.vf.fence_context import (
+    build_distance_profile,
+    convert_fence_distance,
+    describe_interactions,
+    summarise_context,
+)
 from davasus.vf.fence_interactions import (
     detect_interactions,
     find_criterion,
@@ -122,3 +130,51 @@ def test_first_cues_sociability_and_strategies():
     strategies = journey.classify_strategies(table)
     assert strategies[0] == strategies[1] == journey.STRATEGIES[0]
     assert strategies[2] == strategies[3] == journey.STRATEGIES[3]
+
+
+def _context_herd() -> tuple[SimpleNamespace, pd.DataFrame, np.ndarray]:
+    """DE01 meets the fence twelve times: six at the east line both parcels share, six at the new north line."""
+    n, period = 12 * 30, 30
+    minutes = _minutes(n)
+    raw = np.full((n, 3), -3000.0)
+    raw[0, 2] = -2147483647.0
+    x = np.tile(np.array([0.0, 4.0, 300.0]), (n, 1))
+    y = np.zeros((n, 3))
+    rows = []
+    for visit in range(12):
+        t = visit * period + 10
+        is_new = visit >= 6
+        raw[t, 0] = -200.0 if is_new else -480.0
+        y[t - 3:t + 3, :2] = 100.0 if is_new else -50.0
+        x[t - 3:t + 3, :2] = (0.0, 4.0) if is_new else (46.0, 50.0)
+        rows.append(("DE01", visit + 1, t, t, minutes[t], minutes[t].floor("D"), 1.0, float(is_new), is_new, True))
+    interactions = pd.DataFrame(rows, columns=["lom", "number", "i0", "i1", "onset_utc", "day", "audio", "pulse",
+                                               "is_pulsed", "is_first_cue"])
+    square = np.array([-50.0, 50.0, 50.0, -50.0])
+    is_vf_edge = np.array([False, True, True, False])  # the east side and the north side
+    old = (square, np.array([-100.0, -100.0, 0.0, 0.0]), is_vf_edge)
+    new = (square, np.array([-100.0, -100.0, 100.0, 100.0]), is_vf_edge)
+    events = pd.DataFrame({"label": ["first", "second"], "start_utc": [minutes[0], minutes[5]]})
+    data = SimpleNamespace(loms=tuple(LOMS), x_m=x, y_m=y, outside=np.zeros((n, 3), dtype=np.int8), events=events,
+                           event_index=np.r_[np.zeros(5, dtype=int), np.ones(n - 5, dtype=int)],
+                           parcel_outlines={"first": old, "second": new})
+    return data, interactions, raw
+
+
+def test_context_tells_approach_depth_and_new_line():
+    data, interactions, raw = _context_herd()
+    distance = convert_fence_distance(raw)
+    assert np.isnan(distance[0, 2]) and distance[1, 0] == -30.0
+    described = describe_interactions(interactions, data, distance, np.zeros(len(raw)))
+    assert described["is_approach"].all()
+    assert described["depth_m"].tolist() == [-4.8] * 6 + [-2.0] * 6
+    assert described["is_deep"].tolist() == [False] * 6 + [True] * 6
+    assert described["n_mates_near"].eq(1).all()  # DE02 stands 4 m away, DE03 far off
+    summary = summarise_context(described).set_index("lom").loc["DE01"]
+    assert summary["pulsed_share_approach"] == 0.5 and summary["deep_share"] == 0.5
+    assert described["is_new_line"].tolist() == [0.0] * 6 + [1.0] * 6
+    assert summary["pulsed_share_new_line"] == 1.0 and summary["pulsed_share_same_line"] == 0.0
+    profile = build_distance_profile(distance, np.where(distance > -5, 1.0, 0.0), np.zeros(raw.shape),
+                                     np.zeros(raw.shape, dtype=bool))
+    assert profile.loc[profile["from_m"] == -5.0, "tone_share"].iloc[0] == 1.0
+    assert profile.loc[profile["to_m"] <= -5.0, "tone_share"].eq(0.0).all()
