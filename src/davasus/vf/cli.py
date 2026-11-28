@@ -651,6 +651,130 @@ def load_context_rankings(leadership_dir: Path) -> pd.DataFrame:
 
 
 # ┌────────────────────────────────────────────────────────────┐
+# │ Hierarchy  « davasus-vf-hierarchy »                        │
+# └────────────────────────────────────────────────────────────┘
+
+HIERARCHY_SUBDIR: str = "hierarchy"
+
+
+def build_hierarchy_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-hierarchy",
+        description="Combined leadership hierarchy from the leadership runs, and the cues each rank receives.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "figures" / FIGURE_SUBDIR / HIERARCHY_SUBDIR)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def hierarchy_main(argv: list[str] | None = None) -> int:
+    """Write hierarchy.csv, its cue correlations and the cue figure."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    from davasus.vf.hierarchy import (
+        add_cue_totals,
+        compute_combined_hierarchy,
+        correlate_ranks_with_cues,
+    )
+    from davasus.vf.viz_hierarchy import plot_hierarchy_cues
+    from davasus.viz import save_triplet
+
+    args = build_hierarchy_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    data = _load_dashboard(args.db)
+    if data is None:
+        return 2
+    rankings = load_per_heifer_measures(args.out.parent)
+    if rankings is None:
+        log.error("no leadership tables in %s; run the davasus-vf-leadership commands first", args.out.parent)
+        return 2
+    hierarchy = add_cue_totals(compute_combined_hierarchy(rankings), list(data.loms), data.audio, data.pulse)
+    args.out.mkdir(parents=True, exist_ok=True)
+    correlate_ranks_with_cues(hierarchy).to_csv(args.out / "cue_correlations.csv", index=False)
+    fig, table = plot_hierarchy_cues(hierarchy)
+    written = save_triplet(fig, table, args.out / "hierarchy")
+    plt.close(fig)
+    log.info("wrote %s and tables in %s", written["png"].name, args.out)
+    return 0
+
+
+def load_per_heifer_measures(leadership_dir: Path) -> pd.DataFrame | None:
+    """Per-heifer columns of all leadership runs that exist, one row per heifer."""
+    table = load_all_leadership_rankings(leadership_dir)
+    situations_csv = leadership_dir / LEADERSHIP_SITUATIONS_SUBDIR / "leadership_situations.csv"
+    extra = [load_context_rankings(leadership_dir)]
+    if situations_csv.is_file():
+        extra.append(pd.read_csv(situations_csv).drop(columns=["lag_s"], errors="ignore"))
+    for frame in extra:
+        if len(frame.columns) > 1:
+            table = frame if table is None else table.merge(frame, on="lom", how="outer")
+    return table
+
+
+# ┌────────────────────────────────────────────────────────────┐
+# │ Subgroups  « davasus-vf-subgroups »                        │
+# └────────────────────────────────────────────────────────────┘
+
+SUBGROUPS_SUBDIR: str = "subgroups"
+
+
+def build_subgroups_parser() -> argparse.ArgumentParser:
+    from davasus.vf.constants import PERMUTATIONS, RANDOM_SEED
+
+    p = argparse.ArgumentParser(
+        prog="davasus-vf-subgroups",
+        description="Pair bonds and communities from split-free days, tested on the herd's splits.",
+    )
+    p.add_argument("--db", type=Path, help="heifer_vf.db (default: local_paths.json)")
+    p.add_argument("--out", type=Path, default=REPO_ROOT / "figures" / FIGURE_SUBDIR / SUBGROUPS_SUBDIR)
+    p.add_argument("--permutations", type=int, default=PERMUTATIONS)
+    p.add_argument("--seed", type=int, default=RANDOM_SEED)
+    p.add_argument("-v", "--verbose", action="store_true")
+    return p
+
+
+def subgroups_main(argv: list[str] | None = None) -> int:
+    """Run the subgroup analysis and write tables plus the six-panel figure."""
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    from davasus.vf.initiation import build_herd_tracks
+    from davasus.vf.subgroups_analysis import run_subgroups
+    from davasus.vf.viz_subgroups import plot_subgroups
+    from davasus.viz import save_triplet
+
+    args = build_subgroups_parser().parse_args(argv)
+    _configure_logging(args.verbose)
+    data = _load_dashboard(args.db)
+    if data is None:
+        return 2
+    hierarchy_csv = args.out.parent / HIERARCHY_SUBDIR / "hierarchy.csv"
+    hierarchy = pd.read_csv(hierarchy_csv) if hierarchy_csv.is_file() else None
+    if hierarchy is None:
+        log.warning("no hierarchy.csv; rank-controlled tests are skipped (run davasus-vf-hierarchy)")
+    tracks = build_herd_tracks(data.minutes, data.loms, data.x_m, data.y_m, data.events,
+                               data.is_gps_reduced)
+    result = run_subgroups(data, tracks, hierarchy, np.random.default_rng(args.seed), args.permutations)
+    args.out.mkdir(parents=True, exist_ok=True)
+    for name in ("events", "sides", "communities", "modularity", "bond_tests", "community_tests", "summary"):
+        getattr(result, name).to_csv(args.out / f"{name}.csv", index=False)
+    for name, layer in result.layers.items():
+        layer.to_csv(args.out / f"bond_{name}.csv")
+    fig, pairs = plot_subgroups(result, hierarchy)
+    written = save_triplet(fig, pairs, args.out / "subgroups")
+    plt.close(fig)
+    log.info("wrote %s and tables in %s", written["png"].name, args.out)
+    return 0
+
+
+# ┌────────────────────────────────────────────────────────────┐
 # │ Paddocks  « davasus-vf-paddocks »                          │
 # └────────────────────────────────────────────────────────────┘
 

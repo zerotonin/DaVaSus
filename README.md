@@ -89,6 +89,8 @@ davasus-vf-pull-anchor            # who pulls whom: pair separation-reunion even
 davasus-vf-paddocks               # parcel outlines and paddocks A-F into heifer_vf.db
 davasus-vf-leadership-context     # new-paddock entry, first at the fence, pre-departure activity
 davasus-vf-leadership-situations  # first into the shade, first away from the fence, turn leadership
+davasus-vf-hierarchy              # combined hierarchy rank and the cues each rank receives
+davasus-vf-subgroups              # pair bonds, communities, and their test on herd splits
 ```
 
 **Dashboard.** `pip install -e ".[gui]"` (PySide6, pyqtgraph). The map shows
@@ -189,6 +191,19 @@ three more:
   - The peak delay is refined to fractions of a minute.
   - Scores are given raw, fully lag-corrected and with the collar-lag trend
     regressed out. At 1-min sampling the full correction over-shoots.
+
+**Hierarchy and subgroups.** `davasus-vf-hierarchy` (after the leadership
+commands) averages each heifer's rank over the measures that showed leaders:
+four movement measures (first mover, front of formation, pulls, turns) and
+three exploration measures (first at the fence, into a new paddock, away
+from the fence). It writes `hierarchy/hierarchy.csv` and a figure of audio
+cues and pulses by rank. `davasus-vf-subgroups` then asks whether the herd
+has subgroups. Pair bonds (nearest-neighbour association, pull success,
+departure order, copied turns) are built only on days without a herd split;
+communities come from Newman's (2006) modularity method. Both are tested on
+the splits themselves, when at least two groups of three or more heifers
+stand more than 30 m apart for five minutes: Mantel tests with heifers
+relabelled, plain and with the hierarchy-rank gap removed.
 
 ## Repository layout
 

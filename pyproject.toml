@@ -77,6 +77,8 @@ davasus-vf-pull-anchor = "davasus.vf.cli:pull_anchor_main"
 davasus-vf-paddocks = "davasus.vf.cli:paddocks_main"
 davasus-vf-leadership-context = "davasus.vf.cli:leadership_context_main"
 davasus-vf-leadership-situations = "davasus.vf.cli:leadership_situations_main"
+davasus-vf-hierarchy = "davasus.vf.cli:hierarchy_main"
+davasus-vf-subgroups = "davasus.vf.cli:subgroups_main"
 
 [project.urls]
 Repository = "https://github.com/zerotonin/davasus"
