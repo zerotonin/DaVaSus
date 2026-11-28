@@ -250,10 +250,7 @@ def compute_agreement(per_heifer: pd.DataFrame, comparison: pd.DataFrame | None)
 
     Ranks are flipped so that a larger value always means more leading.
     """
-    table = per_heifer.copy()
-    for measure, (column, sign) in MEASURE_SOURCES.items():
-        if column in table:
-            table[measure] = sign * table[column]
+    table = orient_measures(per_heifer)
     if comparison is not None:
         table = table.merge(comparison, on="lom", how="left")
     measures = [m for m in LEADING_MEASURES if m in table and table[m].notna().sum() >= 5]
@@ -264,6 +261,15 @@ def compute_agreement(per_heifer: pd.DataFrame, comparison: pd.DataFrame | None)
             rows.append({"measure_a": a, "measure_b": b, "rho": float(rho), "p": float(p),
                          "n": int((table[a].notna() & table[b].notna()).sum())})
     return pd.DataFrame(rows)
+
+
+def orient_measures(per_heifer: pd.DataFrame) -> pd.DataFrame:
+    """Copy with one column per leading measure, larger = more leading."""
+    table = per_heifer.copy()
+    for measure, (column, sign) in MEASURE_SOURCES.items():
+        if column in table:
+            table[measure] = sign * table[column]
+    return table
 
 
 def widen_by_scenario(table: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
