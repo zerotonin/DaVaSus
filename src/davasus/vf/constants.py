@@ -237,6 +237,31 @@ SOCIAL_QUIET_MIN: int = 3
 SOCIAL_MIN_EVENTS: int = 10
 FIRST_CUE_WINDOW_MIN: int = 5
 
+# Fence context. The collar's distance to the fence is in centimetres,
+# negative inside; values beyond FENCE_DISTANCE_LIMIT_M are sentinels. An
+# interaction is an approach when the heifer was at least APPROACH_FROM_M
+# inside in the APPROACH_LOOKBACK_MIN minutes before; otherwise she was
+# already at the tone line. Depth bands are metres from the fence line.
+FENCE_DISTANCE_UNIT_M: float = 0.01
+FENCE_DISTANCE_LIMIT_M: float = 500.0
+APPROACH_FROM_M: float = 8.0
+APPROACH_LOOKBACK_MIN: int = 3
+DEEP_INTERACTION_M: float = -3.0
+BREAKOUT_SEARCH_MIN: int = 5
+DISTANCE_PROFILE_EDGES_M: tuple[float, ...] = (-15.0, -10.0, -8.0, -7.0, -6.0, -5.0, -4.0, -3.0, -2.0, -1.0, 0.0,
+                                               2.0, 10.0)
+# A line is new when the nearest point of the active virtual fence is more
+# than NEW_LINE_GAP_M from the previous parcel's; interactions further than
+# LINE_MAX_DISTANCE_M from any active line are not assigned. Early is the
+# first NEW_LINE_EARLY_H hours of a parcel.
+NEW_LINE_GAP_M: float = 10.0
+LINE_MAX_DISTANCE_M: float = 25.0
+NEW_LINE_EARLY_H: int = 24
+# Herd context at the onset of an interaction: mates within
+# CONTEXT_RANGE_M; a heifer needs CONTEXT_MIN_INTERACTIONS of each kind.
+CONTEXT_RANGE_M: float = 10.0
+CONTEXT_MIN_INTERACTIONS: int = 5
+
 # Statistics.
 BOOTSTRAP_DRAWS: int = 2_000
 GRADED_NULL_DRAWS: int = 2_000
