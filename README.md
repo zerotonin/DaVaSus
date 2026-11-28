@@ -215,8 +215,12 @@ after each fence move, and scores what an uncued heifer in the pre-fence
 zone does in the 3 min after a herd mate within 20 m is cued, against zone
 minutes in company while the herd is quiet. The cue columns are counter
 differences between fixes, so cues on a fix after a gap of more than 2 min
-count in the totals but not as interactions. Run `davasus-vf-hierarchy`
-first to have the ranks in the table.
+count in the totals but not as interactions. A second figure
+uses the collar's distance to the fence: where tone and pulse fall, whether
+an interaction was an approach from further inside, how deep it went,
+whether it happened at a line the previous parcel did not have, and how
+many herd mates were around. Run `davasus-vf-hierarchy` first to have the
+ranks in the table.
 
 ## Repository layout
 

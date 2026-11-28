@@ -796,7 +796,7 @@ def build_journey_parser() -> argparse.ArgumentParser:
 
 
 def journey_main(argv: list[str] | None = None) -> int:
-    """Run the learning-journey analysis and write tables plus the six-panel figure."""
+    """Run the learning-journey analysis and write tables plus the two six-panel figures."""
     import matplotlib
 
     matplotlib.use("Agg")
@@ -805,7 +805,7 @@ def journey_main(argv: list[str] | None = None) -> int:
 
     from davasus.vf.initiation import build_herd_tracks
     from davasus.vf.learning_journey import run_learning_journey
-    from davasus.vf.viz_learning_journey import plot_learning_journey
+    from davasus.vf.viz_learning_journey import plot_fence_context, plot_learning_journey
     from davasus.viz import save_triplet
 
     args = build_journey_parser().parse_args(argv)
@@ -823,9 +823,10 @@ def journey_main(argv: list[str] | None = None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
     for name in ("interactions", "weeks", "curves", "fence_moves", "mate_cues", "correlations", "tests"):
         getattr(result, name).to_csv(args.out / f"{name}.csv", index=False)
-    fig, table = plot_learning_journey(result)
-    written = save_triplet(fig, table, args.out / "learning_journey")
-    plt.close(fig)
+    for plot, stem in ((plot_fence_context, "fence_context"), (plot_learning_journey, "learning_journey")):
+        fig, table = plot(result)
+        written = save_triplet(fig, table, args.out / stem)
+        plt.close(fig)
     log.info("wrote %s and tables in %s", written["png"].name, args.out)
     return 0
 
