@@ -211,6 +211,32 @@ ASSOCIATION_STEP_MIN: int = 5
 PULL_BOND_MIN_EVENTS: int = 10
 MODULARITY_NULL_DRAWS: int = 1_000
 
+# Fence interactions: cue minutes of one heifer at most INTERACTION_GAP_MIN
+# apart are one interaction. The cue columns are counter differences between
+# fixes, so cues on a fix that follows a gap longer than CUE_MAX_FIX_GAP_MIN
+# count in the totals but have no usable time.
+INTERACTION_GAP_MIN: int = 2
+CUE_MAX_FIX_GAP_MIN: int = 2
+# Learning: pulsed share in the first and last LEARNING_BLOCK interactions;
+# the criterion is the first run of LEARNING_BLOCK interactions with
+# SR_CRITERION of them resolved by the tone alone.
+LEARNING_BLOCK: int = 20
+LEARNING_MIN_INTERACTIONS: int = 40
+# Fence moves: interactions FENCE_MOVE_WINDOW_H hours before and after a new
+# parcel; a heifer needs FENCE_MOVE_MIN_INTERACTIONS on each side.
+FENCE_MOVE_WINDOW_H: int = 24
+FENCE_MOVE_MIN_INTERACTIONS: int = 3
+# Social cues: an uncued heifer in the pre-fence zone whose herd mate within
+# SOCIAL_CUE_RANGE_M gets a cue; her next SOCIAL_RESPONSE_MIN minutes are
+# compared with zone minutes in company with no cue in the herd for
+# SOCIAL_QUIET_MIN minutes either side. An interaction is a first cue when no
+# other heifer was cued in the FIRST_CUE_WINDOW_MIN minutes before.
+SOCIAL_CUE_RANGE_M: float = 20.0
+SOCIAL_RESPONSE_MIN: int = 3
+SOCIAL_QUIET_MIN: int = 3
+SOCIAL_MIN_EVENTS: int = 10
+FIRST_CUE_WINDOW_MIN: int = 5
+
 # Statistics.
 BOOTSTRAP_DRAWS: int = 2_000
 GRADED_NULL_DRAWS: int = 2_000
