@@ -26,6 +26,13 @@ from davasus.vf.constants import (
     PERMUTATIONS,
     SOCIAL_MIN_EVENTS,
 )
+from davasus.vf.fence_context import (
+    build_distance_profile,
+    convert_fence_distance,
+    describe_interactions,
+    run_context_tests,
+    summarise_context,
+)
 from davasus.vf.fence_interactions import (
     build_learning_curves,
     detect_interactions,
@@ -67,6 +74,7 @@ class LearningJourneyResult:
     mate_cues: pd.DataFrame
     correlations: pd.DataFrame
     tests: pd.DataFrame
+    distance_profile: pd.DataFrame
 
 
 def run_learning_journey(data, tracks: HerdTracks, hierarchy: pd.DataFrame | None, rng: np.random.Generator,
@@ -86,6 +94,8 @@ def run_learning_journey(data, tracks: HerdTracks, hierarchy: pd.DataFrame | Non
     interactions = detect_interactions(data.audio, data.pulse, is_untimed, data.minutes, loms)
     is_cue = ((np.nan_to_num(data.audio) > 0) | (np.nan_to_num(data.pulse) > 0)) & ~is_untimed
     interactions["is_first_cue"] = flag_first_cues(interactions, is_cue, loms)
+    distance_m = convert_fence_distance(data.fence_dist_max)
+    interactions = describe_interactions(interactions, data, distance_m, tracks.speed)
     n_days = (data.minutes[-1] - data.minutes[0]) / pd.Timedelta(days=1)
     fence_moves = compare_fence_moves(interactions, data.events)
     social_events = find_social_events(data.outside, is_cue, data.pulse, data.x_m, data.y_m, data.is_gps_reduced,
@@ -98,12 +108,13 @@ def run_learning_journey(data, tracks: HerdTracks, hierarchy: pd.DataFrame | Non
         .merge(summarise_learning(interactions), on="lom", how="left")
         .merge(summarise_first_cues(interactions), on="lom", how="left")
         .merge(summarise_fence_moves(fence_moves), on="lom", how="left")
+        .merge(summarise_context(interactions), on="lom", how="left")
         .merge(social, on="lom", how="left")
         .merge(compute_sociability(data.x_m, data.y_m, ~tracks.is_excluded, loms), on="lom", how="left"))
     if hierarchy is not None:
         per_heifer = per_heifer.merge(hierarchy[["lom", *HIERARCHY_COLUMNS]], on="lom", how="left")
     per_heifer["strategy"] = classify_strategies(per_heifer)
-    tests = pd.DataFrame([
+    tests = pd.concat([pd.DataFrame([
         {"test": "pulsed share: after minus before a fence move",
          **test_paired_shift(per_heifer["pulsed_share_jump"].to_numpy(), rng, n_permutations)},
         {"test": "pulsed share: last minus first block of interactions",
@@ -112,10 +123,12 @@ def run_learning_journey(data, tracks: HerdTracks, hierarchy: pd.DataFrame | Non
          **test_paired_shift(per_heifer["pulsed_share_first_gain"].to_numpy(), rng, n_permutations)},
         *({"test": f"{outcome}: after a mate's cue minus quiet company",
            **test_paired_shift(per_heifer[f"{outcome}_gain"].to_numpy(), rng, n_permutations)}
-          for outcome in OUTCOMES)])
+          for outcome in OUTCOMES)]), run_context_tests(per_heifer, test_paired_shift, rng, n_permutations)],
+        ignore_index=True)
     return LearningJourneyResult(interactions, per_heifer, summarise_weeks(interactions, data.minutes[0]),
                                  build_learning_curves(interactions), fence_moves, social_events,
-                                 summarise_mate_cues(social_events), correlate_measures(per_heifer), tests)
+                                 summarise_mate_cues(social_events), correlate_measures(per_heifer), tests,
+                                 build_distance_profile(distance_m, data.audio, data.pulse, is_untimed))
 
 
 # ┌────────────────────────────────────────────────────────────┐
